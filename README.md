@@ -1,4 +1,4 @@
-# vqa_variants
+# Attention, Caption, and Knowledge-based VQA Model
 
 Here, we implement a variant of the "A+C+S-K-LSTM" model as described in the paper [Image Captioning and Visual Question Answering Based on Attributes and External Knowledge](https://arxiv.org/pdf/1603.02814.pdf) by Q Wu et al.
 

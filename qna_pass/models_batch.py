@@ -12,13 +12,14 @@ import string
 import re
 import random
 import json
-
+import math
 import torch
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+BATCH_SIZE = 256
 
 ######################################################################
 # Loading data files
@@ -72,15 +73,15 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 SOS_token = 0
 EOS_token = 1
-
+PAD_token = 2
 
 class Lang:
     def __init__(self, name):
         self.name = name
         self.word2index = {}
         self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS"}
-        self.n_words = 2  # Count SOS and EOS
+        self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
+        self.n_words = 3  # Count SOS and EOS and PAD
 
     def addSentence(self, sentence):
         for word in sentence.split(' '):
@@ -118,6 +119,7 @@ def normalizeString(s):
     s = re.sub(r"([.!?])", r" \1", s)
     s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
     return s
+
 
 
 ######################################################################
@@ -244,11 +246,62 @@ def prepareData2(vatt_file, qns_file, ans_file):
     length = len(triples)
     return input_lang, output_lang, triples, length
 
+def prepareData3(vatt_file, qns_file, ans_file):
+    input_lang, output_lang, triples = readInput(vatt_file, qns_file, ans_file)
+    print("Read %s sentence triples" % len(triples))
+    print(triples[0])
+    triples = filterTriples(triples)
+    print("Trimmed to %s sentence pairs" % len(triples))
+    print("Counting words...")
+    for triple in triples:
+        input_lang.addSentence(triple[1])
+        output_lang.addSentence(triple[2])
+    print("Counted words:")
+    print(input_lang.name, input_lang.n_words)
+    print(output_lang.name, output_lang.n_words)
+    length = len(triples)
+    triples_batch = batch_triples(triples)
+    #print(input_lang.word2index)
+    #exit(0)
+    return input_lang, output_lang, triples_batch, length
+
+def batch_triples(triples):
+    """
+    groups the triples into batches so that we can train in batches rather than one sentence at a time
+    :param triples:
+    :return:
+    """
+    triples_batch = [batch for batch in batch_iter(triples, BATCH_SIZE, shuffle=False)]
+    return triples_batch
+
+
+def batch_iter(data, batch_size, shuffle=False):
+    """ Yield batches of source and target sentences reverse sorted by length (largest to smallest).
+    @param data (list of (src_sent, tgt_sent)): list of tuples containing source and target sentence
+    @param batch_size (int): batch size
+    @param shuffle (boolean): whether to randomly shuffle the dataset
+    """
+    print(batch_size)
+    batch_num = math.ceil(len(data) / batch_size)
+    index_array = list(range(len(data)))
+
+    if shuffle:
+        np.random.shuffle(index_array)
+
+    for i in range(batch_num):
+        indices = index_array[i * batch_size: (i + 1) * batch_size]
+        examples = [data[idx] for idx in indices]
+
+        #examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
+        #batch = [e for e in examples]
+
+        yield examples
+
 
 # input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
 # print(random.choice(pairs))
 
-input_lang, output_lang, triples, nExamples = prepareData2('../Vatt/Vatt20.json',
+input_lang, output_lang, triples, nExamples = prepareData3('../Vatt/Vatt20.json',
         '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
         '../qna_training_coco/v2_mscoco_train2014_annotations.json')
 
@@ -302,7 +355,6 @@ input_lang, output_lang, triples, nExamples = prepareData2('../Vatt/Vatt20.json'
 #    :alt:
 #
 #
-BATCH_SIZE = 50
 VATT_EMBED_SIZE = 256
 WORD_EMBED_SIZE = 256
 HIDDEN_SIZE = 256
@@ -321,7 +373,7 @@ class EncoderRNN(nn.Module):
         self.lstm = nn.LSTM(VATT_EMBED_SIZE, HIDDEN_SIZE)
 
     def special_forward(self, vatt, hidden):
-        vatt_embedded = self.vatt_embedding(vatt).view(1,1,-1)
+        vatt_embedded = self.vatt_embedding(vatt).view(1,BATCH_SIZE,-1)
         output, hidden = self.lstm(vatt_embedded)
         return output, hidden
 
@@ -334,7 +386,7 @@ class EncoderRNN(nn.Module):
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(BATCH_SIZE, 1, self.hidden_size, device=device)
+        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
 
 ######################################################################
 # The Decoder
@@ -375,14 +427,14 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
+        output = self.embedding(input).view(1, BATCH_SIZE, -1)
         output = F.relu(output)
         output, hidden = self.lstm(output, hidden)
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(BATCH_SIZE, 1, self.hidden_size, device=device)
+        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
 ######################################################################
 
 # .. note:: There are other forms of attention that work around the length
@@ -406,23 +458,36 @@ class DecoderRNN(nn.Module):
 def indexesFromSentence(lang, sentence):
     return [lang.word2index[word] for word in sentence.split(' ')]
 
+def padSentInds(lang, sentence):
+    no_padding = [lang.word2index[word] for word in sentence.split(' ')] + [EOS_token]
+    padded = no_padding + ([PAD_token] * (MAX_LENGTH - len(no_padding)))
+    return padded
 
 def tensorFromSentence(lang, sentence):
     indexes = indexesFromSentence(lang, sentence)
     indexes.append(EOS_token)
     return torch.tensor(indexes, dtype=torch.long, device=device).view(-1, 1)
 
+def indexesFromBatch(input_lang, output_lang, triple_batch):
+    vatt_list = [triple[0] for triple in triple_batch]
+    input_list = [padSentInds(input_lang, triple[1]) for triple in triple_batch]
+    target_list = [padSentInds(output_lang, triple[2]) for triple in triple_batch]
+    return vatt_list, input_list, target_list,
+
+
+def tensorFromBatch(input_lang, output_lang, triple_batch):
+    vatt_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
+    return (torch.tensor(vatt_list, device=device, dtype=torch.float).view(-1, BATCH_SIZE),
+            torch.tensor(input_list, dtype=torch.long, device=device).view(-1, BATCH_SIZE),
+        torch.tensor(target_list, dtype=torch.long, device=device).view(-1, BATCH_SIZE))
 
 def tensorsFromPair(pair):
     input_tensor = tensorFromSentence(input_lang, pair[0])
     target_tensor = tensorFromSentence(output_lang, pair[1])
     return (input_tensor, target_tensor)
 
-def tensorsFromTriples(triple):
-    input_tensor = tensorFromSentence(input_lang, triple[1])
-    target_tensor = tensorFromSentence(output_lang, triple[2])
-    vatt_tensor = torch.tensor(triple[0], device=device, dtype=torch.float)
-    return (vatt_tensor, input_tensor, target_tensor)
+def tensorsFromTriples(triple_batch):
+    return tensorFromBatch(input_lang, output_lang, triple_batch)
 
 
 ######################################################################
@@ -475,8 +540,8 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
      #   encoder_output, encoder_hidden = encoder(
       #      input_tensor[ei], encoder_hidden)
        # encoder_outputs[ei] = encoder_output[0, 0]
-    encoder_output, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz 
-    encoder_outputs = encoder_output[0, 0] # encoder_outputs now max_len * hidden_size * batchsz
+    encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
+    #encoder_outputs = encoder_output[0, 0] # encoder_outputs now max_len * hidden_size * batchsz
     decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
     #decoder_input = torch.tensor(device=device) 
 
@@ -546,11 +611,13 @@ def timeSince(since, percent):
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 #
+    """
 def batch_iter(data, batch_size, shuffle=False):
-    """ Yield batches of source and target sentences reverse sorted by length (largest to smallest).
-    @param data (list of (src_sent, tgt_sent)): list of tuples containing source and target sentence
-    @param batch_size (int): batch size
-    @param shuffle (boolean): whether to randomly shuffle the dataset
+    """
+    #Yield batches of source and target sentences reverse sorted by length (largest to smallest).
+   # @param data (list of (src_sent, tgt_sent)): list of tuples containing source and target sentence
+    #@param batch_size (int): batch size
+    #@param shuffle (boolean): whether to randomly shuffle the dataset
     """
     print(batch_size)
     batch_num = math.ceil(len(data) / batch_size)
@@ -570,6 +637,8 @@ def batch_iter(data, batch_size, shuffle=False):
 
         yield i, vatt_batch, input_batch, target_batch
 
+    """
+
 
 def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, learning_rate=0.01):
     start = time.time()
@@ -582,26 +651,22 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
     print('start map to tensor')
     training_triples = [tensorsFromTriples(i) for i in triples]
     print('end map to tensor')
-    #print('start shuffle')
-    #random.shuffle(training_triples)
-    #print('end shuffle')
+    print('start shuffle')
+    random.shuffle(training_triples)
+    print('end shuffle')
     criterion = nn.NLLLoss()
 
-    n_iters = n_examples / BATCH_SIZE
+    n_iters = int(n_examples / BATCH_SIZE)
 
-    for iter, vatt_batch, input_batch, target_batch in batch_iter(training_triples, BATCH_SIZE, shuffle=True):
-        vatt_batch = torch.tensor(vatt_batch)
-        input_batch = torch.tensor(input_batch)
-        target_batch = torch.tensor(target_batch)
+    for iter in range(1, n_iters + 1):
+        training_triple = training_triples[iter - 1]
+        print(type(training_triple[0]))
+        vatt_tensor = training_triple[0] # v_att * batchsz
+        input_tensor = training_triple[1]
+        target_tensor = training_triple[2]
 
-        #training_triple = training_triples[iter - 1]
-        #vatt_tensor = training_triple[0]
-        #input_tensor = training_triple[1]
-        #target_tensor = training_triple[2]
-        if iter == 0:
-            print("len(vatt_batch[0]), len(vatt_batch), vatt_batch[0]",
-              len(vatt_batch[0]), len(vatt_batch), vatt_batch[0])
-        loss = train(vatt_batch, input_batch, target_batch, encoder,
+
+        loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
         plot_loss_total += loss
@@ -724,9 +789,10 @@ def evaluateRandomly(encoder, decoder, n=10):
 #    evaluate, and continue training later. Comment out the lines where the
 #    encoder and decoder are initialized and run ``trainIters`` again.
 #
-
+num_Vatt = 20
+class_prob_boundingbx = 6
 hidden_size = 256
-encoder1 = EncoderRNN(20*6, input_lang.n_words).to(device)
+encoder1 = EncoderRNN(num_Vatt*class_prob_boundingbx, input_lang.n_words).to(device)
 decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
 
 epochs = 10

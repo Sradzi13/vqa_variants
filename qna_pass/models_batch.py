@@ -477,7 +477,7 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
        # encoder_outputs[ei] = encoder_output[0, 0]
     encoder_output, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz 
     encoder_outputs = encoder_output[0, 0] # encoder_outputs now max_len * hidden_size * batchsz
-    decoder_input = torch.tensor([[SOS_token]], device=device)
+    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
     #decoder_input = torch.tensor(device=device) 
 
     decoder_hidden = encoder_hidden
@@ -589,12 +589,18 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
 
     n_iters = n_examples / BATCH_SIZE
 
-    for iter, vatt_batch, input_batch, target_batch in batch_iter(training_tripes, BATCH_SIZE, shuffle=True):
+    for iter, vatt_batch, input_batch, target_batch in batch_iter(training_triples, BATCH_SIZE, shuffle=True):
+        vatt_batch = torch.tensor(vatt_batch)
+        input_batch = torch.tensor(input_batch)
+        target_batch = torch.tensor(target_batch)
+
         #training_triple = training_triples[iter - 1]
         #vatt_tensor = training_triple[0]
         #input_tensor = training_triple[1]
         #target_tensor = training_triple[2]
-        print(vatt_batch.shape())
+        if iter == 0:
+            print("len(vatt_batch[0]), len(vatt_batch), vatt_batch[0]",
+              len(vatt_batch[0]), len(vatt_batch), vatt_batch[0])
         loss = train(vatt_batch, input_batch, target_batch, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss

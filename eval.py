@@ -605,5 +605,5 @@ if __name__ == "__main__":
     ]
     for sent_pair in sentence_pairs:
         print(sent_pair[0], sent_pair[1], sent_pair[2],
-                                      similarity(sent_pair[0], sent_pair[1], False),
-                                      similarity(sent_pair[0], sent_pair[1], True))
+                                      wups_similarity(sent_pair[0], sent_pair[1], False),
+                                      wups_similarity(sent_pair[0], sent_pair[1], True))

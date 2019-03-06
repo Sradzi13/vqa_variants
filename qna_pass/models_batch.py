@@ -556,25 +556,6 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
             loss += criterion(decoder_output, target_tensor[di])
-            #if di > 0:
-            #    decoder_inputs = np.stack(decoder_inputs, np.array(decoder_input.tolist()), axis=-1)
-            #else:
-            #    decoder_inputs = np.array(decoder_input.tolist())
-            decoder_list = decoder_input.tolist()
-            indices = [i for i, x in enumerate(decoder_list) if x == EOS_token]
-            #print(decoder_list)
-            for i in indices:
-                if final_losses[i] == 0:
-                    final_losses[i] = loss.item()
-            
-        print("final_losses", final_losses)
-        # go back and truncate words after the first EOS_token found
-        #truncated_decoder_input = [None] * target_length
-        #for i in range(target_length):
-        #    decoder_input = decoder_inputs[i]
-        #    if decoder_input == EOS_token:
-        #        truncated_decoder_input[i] = decoder_input[:, :i+1]
-
 
     loss.backward()
 
@@ -633,7 +614,7 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
     print('start shuffle')
     random.shuffle(training_triples)
     print('end shuffle')
-    criterion = nn.NLLLoss()
+    criterion = nn.NLLLoss(ignore_index=PAD_token)
 
     n_iters = int(n_examples / BATCH_SIZE) + 1
     for iter in range(1, n_iters + 1):

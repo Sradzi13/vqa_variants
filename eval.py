@@ -300,7 +300,7 @@ def similarity(sentence_1, sentence_2, info_content_norm):
 
 ######################### word similarity ##########################
 
-def get_best_synset_pair(word_1, word_2):
+def wups_get_best_synset_pair(word_1, word_2):
     """
     Choose the pair with highest path similarity among all pairs.
     Mimics pattern-seeking behavior of humans.
@@ -321,7 +321,7 @@ def get_best_synset_pair(word_1, word_2):
                    best_pair = synset_1, synset_2
         return best_pair
 
-def length_dist(synset_1, synset_2):
+def wups_length_dist(synset_1, synset_2):
     """
     Return a measure of the length of the shortest path in the semantic
     ontology (Wordnet in our case as well as the paper's) between two
@@ -348,7 +348,7 @@ def length_dist(synset_1, synset_2):
     return math.exp(-ALPHA * l_dist)
 
 
-def hierarchy_dist(synset_1, synset_2):
+def wups_hierarchy_dist(synset_1, synset_2):
     """
     Return a measure of depth in the ontology to model the fact that
     nodes closer to the root are broader and have less semantic similarity
@@ -383,11 +383,11 @@ def hierarchy_dist(synset_1, synset_2):
             (math.exp(BETA * h_dist) + math.exp(-BETA * h_dist)))
 
 
-def word_similarity(word_1, word_2):
-    synset_pair = get_best_synset_pair(word_1, word_2)
+def wups_word_similarity(word_1, word_2):
+    synset_pair = wups_get_best_synset_pair(word_1, word_2)
     #print('synset_pair', synset_pair)
-    word_sim = (length_dist(synset_pair[0], synset_pair[1]) *
-            hierarchy_dist(synset_pair[0], synset_pair[1]))
+    word_sim = (wups_length_dist(synset_pair[0], synset_pair[1]) *
+            wups_hierarchy_dist(synset_pair[0], synset_pair[1]))
     #print('word_sim', word_sim)
     return word_sim
 
@@ -395,7 +395,7 @@ def word_similarity(word_1, word_2):
 
 ######################### sentence similarity ##########################
 
-def most_similar_word(word, word_set):
+def wups_most_similar_word(word, word_set):
     """
     Find the word in the joint word set that is most similar to the word
     passed in. We use the algorithm above to compute word similarity between
@@ -405,7 +405,7 @@ def most_similar_word(word, word_set):
     max_sim = -1.0
     sim_word = ""
     for ref_word in word_set:
-        sim = word_similarity(word, ref_word)
+        sim = wups_word_similarity(word, ref_word)
         if sim > max_sim:
             max_sim = sim
             sim_word = ref_word
@@ -413,7 +413,7 @@ def most_similar_word(word, word_set):
     return sim_word, max_sim
 
 
-def info_content(lookup_word):
+def wups_info_content(lookup_word):
     """
     Uses the Brown corpus available in NLTK to calculate a Laplace
     smoothed frequency distribution of words, then uses this information
@@ -434,7 +434,7 @@ def info_content(lookup_word):
     return 1.0 - (math.log(n + 1) / math.log(N + 1))
 
 
-def semantic_vector(words, joint_words, info_content_norm):
+def wups_semantic_vector(words, joint_words, info_content_norm):
     """
     Computes the semantic vector of a sentence. The sentence is passed in as
     a collection of words. The size of the semantic vector is the same as the
@@ -455,15 +455,15 @@ def semantic_vector(words, joint_words, info_content_norm):
                 semvec[i] = semvec[i] * math.pow(info_content(joint_word), 2)
         else:
             # find the most similar word in the joint set and set the sim value
-            sim_word, max_sim = most_similar_word(joint_word, sent_set)
+            sim_word, max_sim = wups_most_similar_word(joint_word, sent_set)
             semvec[i] = max_sim if max_sim > PHI else 0.0
             if info_content_norm:
-                semvec[i] = semvec[i] * info_content(joint_word) * info_content(sim_word)
+                semvec[i] = semvec[i] * wups_info_content(joint_word) * wups_info_content(sim_word)
         i = i + 1
     return semvec
 
 
-def semantic_similarity(sentence_1, sentence_2, info_content_norm):
+def wups_semantic_similarity(sentence_1, sentence_2, info_content_norm):
     """
     Computes the semantic similarity between two sentences as the cosine
     similarity between the semantic vectors computed for each sentence.
@@ -471,14 +471,14 @@ def semantic_similarity(sentence_1, sentence_2, info_content_norm):
     words_1 = nltk.word_tokenize(sentence_1)
     words_2 = nltk.word_tokenize(sentence_2)
     joint_words = set(words_1).union(set(words_2))
-    vec_1 = semantic_vector(words_1, joint_words, info_content_norm)
-    vec_2 = semantic_vector(words_2, joint_words, info_content_norm)
+    vec_1 = wups_semantic_vector(words_1, joint_words, info_content_norm)
+    vec_2 = wups_semantic_vector(words_2, joint_words, info_content_norm)
     return np.dot(vec_1, vec_2.T) / (np.linalg.norm(vec_1) * np.linalg.norm(vec_2))
 
 
 ######################### word order similarity ##########################
 
-def word_order_vector(words, joint_words, windex):
+def wups_word_order_vector(words, joint_words, windex):
     """
     Computes the word order vector for a sentence. The sentence is passed
     in as a collection of words. The size of the word order vector is the
@@ -499,7 +499,7 @@ def word_order_vector(words, joint_words, windex):
         else:
             # word not in joint_words, find most similar word and populate
             # word_vector with the thresholded similarity
-            sim_word, max_sim = most_similar_word(joint_word, wordset)
+            sim_word, max_sim = wups_most_similar_word(joint_word, wordset)
             if max_sim > ETA:
                 wovec[i] = windex[sim_word]
             else:
@@ -507,7 +507,7 @@ def word_order_vector(words, joint_words, windex):
         i = i + 1
     return wovec
 
-def word_order_similarity(sentence_1, sentence_2):
+def wups_word_order_similarity(sentence_1, sentence_2):
     """
     Computes the word-order similarity between two sentences as the normalized
     difference of word order between the two sentences.
@@ -516,8 +516,8 @@ def word_order_similarity(sentence_1, sentence_2):
     words_2 = nltk.word_tokenize(sentence_2)
     joint_words = list(set(words_1).union(set(words_2)))
     windex = {x[1]: x[0] for x in enumerate(joint_words)}
-    r1 = word_order_vector(words_1, joint_words, windex)
-    r2 = word_order_vector(words_2, joint_words, windex)
+    r1 = wups_word_order_vector(words_1, joint_words, windex)
+    r2 = wups_word_order_vector(words_2, joint_words, windex)
     return 1.0 - (np.linalg.norm(r1 - r2) / np.linalg.norm(r1 + r2))
 
 
@@ -530,8 +530,8 @@ def wups_similarity(sentence_1, sentence_2, info_content_norm):
     parameter is True or False depending on whether information content
     normalization is desired or not.
     """
-    return DELTA * semantic_similarity(sentence_1, sentence_2, info_content_norm) + \
-           (1.0 - DELTA) * word_order_similarity(sentence_1, sentence_2)
+    return DELTA * wups_semantic_similarity(sentence_1, sentence_2, info_content_norm) + \
+           (1.0 - DELTA) * wups_word_order_similarity(sentence_1, sentence_2)
 
 def compare_sentences(ref_sentences, produced_sentence):
     scores = []

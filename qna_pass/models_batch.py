@@ -19,7 +19,7 @@ from torch import optim
 import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-BATCH_SIZE = 256
+BATCH_SIZE = 200
 
 ######################################################################
 # Loading data files
@@ -249,7 +249,6 @@ def prepareData2(vatt_file, qns_file, ans_file):
 def prepareData3(vatt_file, qns_file, ans_file):
     input_lang, output_lang, triples = readInput(vatt_file, qns_file, ans_file)
     print("Read %s sentence triples" % len(triples))
-    print(triples[0])
     triples = filterTriples(triples)
     print("Trimmed to %s sentence pairs" % len(triples))
     print("Counting words...")
@@ -261,8 +260,6 @@ def prepareData3(vatt_file, qns_file, ans_file):
     print(output_lang.name, output_lang.n_words)
     length = len(triples)
     triples_batch = batch_triples(triples)
-    #print(input_lang.word2index)
-    #exit(0)
     return input_lang, output_lang, triples_batch, length
 
 def batch_triples(triples):
@@ -281,7 +278,6 @@ def batch_iter(data, batch_size, shuffle=False):
     @param batch_size (int): batch size
     @param shuffle (boolean): whether to randomly shuffle the dataset
     """
-    print(batch_size)
     batch_num = math.ceil(len(data) / batch_size)
     index_array = list(range(len(data)))
 
@@ -373,13 +369,13 @@ class EncoderRNN(nn.Module):
         self.lstm = nn.LSTM(VATT_EMBED_SIZE, HIDDEN_SIZE)
 
     def special_forward(self, vatt, hidden):
-        vatt_embedded = self.vatt_embedding(vatt).view(1,BATCH_SIZE,-1)
+        vatt_embedded = self.vatt_embedding(vatt)#.view(1,BATCH_SIZE,-1)
         output, hidden = self.lstm(vatt_embedded)
         return output, hidden
 
     def forward(self, input, hidden):
         #vatt_embedded = self.vatt_embedding(vatt)
-        embedded = self.word_embedding(input).view(1, 1, -1)
+        embedded = self.word_embedding(input).view(-1, BATCH_SIZE, WORD_EMBED_SIZE)
         #output = torch.cat((vatt_embedded, embedded), 0) # set the first input to be vatt)
         output = embedded
         output, hidden = self.lstm(output, hidden)
@@ -477,9 +473,10 @@ def indexesFromBatch(input_lang, output_lang, triple_batch):
 
 def tensorFromBatch(input_lang, output_lang, triple_batch):
     vatt_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
-    return (torch.tensor(vatt_list, device=device, dtype=torch.float).view(-1, BATCH_SIZE),
-            torch.tensor(input_list, dtype=torch.long, device=device).view(-1, BATCH_SIZE),
-        torch.tensor(target_list, dtype=torch.long, device=device).view(-1, BATCH_SIZE))
+    vatt_tensor = torch.tensor(vatt_list, device=device, dtype=torch.float).view(1, BATCH_SIZE, -1)
+    input_tensor = torch.tensor(input_list, dtype=torch.long, device=device).view(-1, BATCH_SIZE)
+    target_tensor = torch.tensor(target_list, dtype=torch.long, device=device).view(-1, BATCH_SIZE)
+    return vatt_tensor, input_tensor, target_tensor
 
 def tensorsFromPair(pair):
     input_tensor = tensorFromSentence(input_lang, pair[0])
@@ -522,7 +519,6 @@ teacher_forcing_ratio = 0.5
 
 def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     encoder_hidden = encoder.initHidden()
-
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
@@ -535,16 +531,9 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
 
     encoder_output, encoder_hidden = encoder.special_forward(
             vatt_tensor, encoder_hidden) #vatt_size x batchsz input
-    
-    #for ei in range(input_length):
-     #   encoder_output, encoder_hidden = encoder(
-      #      input_tensor[ei], encoder_hidden)
-       # encoder_outputs[ei] = encoder_output[0, 0]
-    encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
-    #encoder_outputs = encoder_output[0, 0] # encoder_outputs now max_len * hidden_size * batchsz
-    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
-    #decoder_input = torch.tensor(device=device) 
 
+    encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
+    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
     decoder_hidden = encoder_hidden
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
@@ -559,15 +548,33 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
 
     else:
         # Without teacher forcing: use its own predictions as the next input
+        #decoder_inputs = np.array()
+        final_losses = [0] * target_length
         for di in range(target_length):
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
-
             loss += criterion(decoder_output, target_tensor[di])
-            if decoder_input.item() == EOS_token:
-                break
+            #if di > 0:
+            #    decoder_inputs = np.stack(decoder_inputs, np.array(decoder_input.tolist()), axis=-1)
+            #else:
+            #    decoder_inputs = np.array(decoder_input.tolist())
+            decoder_list = decoder_input.tolist()
+            indices = [i for i, x in enumerate(decoder_list) if x == EOS_token]
+            #print(decoder_list)
+            for i in indices:
+                if final_losses[i] == 0:
+                    final_losses[i] = loss.item()
+            
+        print("final_losses", final_losses)
+        # go back and truncate words after the first EOS_token found
+        #truncated_decoder_input = [None] * target_length
+        #for i in range(target_length):
+        #    decoder_input = decoder_inputs[i]
+        #    if decoder_input == EOS_token:
+        #        truncated_decoder_input[i] = decoder_input[:, :i+1]
+
 
     loss.backward()
 
@@ -611,34 +618,6 @@ def timeSince(since, percent):
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 #
-    """
-def batch_iter(data, batch_size, shuffle=False):
-    """
-    #Yield batches of source and target sentences reverse sorted by length (largest to smallest).
-   # @param data (list of (src_sent, tgt_sent)): list of tuples containing source and target sentence
-    #@param batch_size (int): batch size
-    #@param shuffle (boolean): whether to randomly shuffle the dataset
-    """
-    print(batch_size)
-    batch_num = math.ceil(len(data) / batch_size)
-    index_array = list(range(len(data)))
-
-    if shuffle:
-        np.random.shuffle(index_array)
-
-    for i in range(batch_num):
-        indices = index_array[i * batch_size: (i + 1) * batch_size]
-        examples = [data[idx] for idx in indices]
-
-        examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
-        vatt_batch = [e[0] for e in examples]
-        input_batch = [e[1] for e in examples]
-        target_batch = [e[2] for e in examples]
-
-        yield i, vatt_batch, input_batch, target_batch
-
-    """
-
 
 def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, learning_rate=0.01):
     start = time.time()
@@ -656,15 +635,12 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
     print('end shuffle')
     criterion = nn.NLLLoss()
 
-    n_iters = int(n_examples / BATCH_SIZE)
-
+    n_iters = int(n_examples / BATCH_SIZE) + 1
     for iter in range(1, n_iters + 1):
         training_triple = training_triples[iter - 1]
-        print(type(training_triple[0]))
         vatt_tensor = training_triple[0] # v_att * batchsz
         input_tensor = training_triple[1]
         target_tensor = training_triple[2]
-
 
         loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)

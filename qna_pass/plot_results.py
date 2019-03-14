@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+plt.switch_backend('agg')
+import matplotlib.ticker as ticker
 
 ######################################################################
 # Plotting results
@@ -6,10 +9,6 @@
 # Plotting is done with matplotlib, using the array of loss values
 # ``plot_losses`` saved while training.
 #
-
-import matplotlib.pyplot as plt
-plt.switch_backend('agg')
-import matplotlib.ticker as ticker
 
 
 def showPlot(points):
@@ -20,4 +19,3 @@ def showPlot(points):
     ax.yaxis.set_major_locator(loc)
     plt.plot(points)
     plt.savefig('losses.png')
-

@@ -159,8 +159,8 @@ def readInput(vatt_file, question_file, answer_file):
     with open(answer_file) as a:
         answers = json.load(a)
     n = len(questions['questions'])
-    test = 555
-    for i in range(test):
+    # test = 55
+    for i in range(n):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
         vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
@@ -414,7 +414,7 @@ class EncoderRNN(nn.Module):
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__
+        super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(output_size, hidden_size)
@@ -423,8 +423,11 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden):
-        # print('decoder input {}'.format(input.shape))
-        output = self.embedding(input).view(1, input.shape[1], -1)
+        if (len(input.shape) == 1):
+            batch_size = input.shape[0]
+        else:
+            batch_size = input.shape[1]
+        output = self.embedding(input).view(1, batch_size, -1)
         output = F.relu(output)
         output, hidden = self.lstm(output, hidden)
         output = self.softmax(self.out(output[0]))
@@ -696,7 +699,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     with torch.no_grad():
         input_tensor = tensorFromSentence(input_lang, sentence)
         input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
+        encoder_hidden = encoder.initHidden(1)
 
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
@@ -733,7 +736,8 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 
 def evaluateRandomly(encoder, decoder, n=10):
     for i in range(n):
-        triple = random.choice(triples)
+        triple_batch = random.choice(triples)
+        triple = random.choice(triple_batch)
         print('>', triple[1])
         print('=', triple[2])
         output_words = evaluate(encoder, decoder, triple[1])
@@ -779,12 +783,12 @@ if __name__ == '__main__':
         trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
         torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
         torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
-        evaluateRandomly(encoder1, decoder1)
+        # evaluateRandomly(encoder1, decoder1)
 
 ######################################################################
 #
 
-    evaluateRandomly(encoder1, decoder1)
+    #evaluateRandomly(encoder1, decoder1)
 
 
 ######################################################################

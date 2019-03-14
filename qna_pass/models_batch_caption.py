@@ -7,309 +7,31 @@ modified from Translation with a Sequence to Sequence Network and Attention
 
 """
 from io import open
-import unicodedata
-import string
-import re
 import random
-import json
-import math
 import torch
 import torch.nn as nn
 from torch import optim
+import time
+
 from encoder_decoder import EncoderRNN, DecoderRNN
 from plot_results import showPlot
-import numpy as np
-
-import torch.nn.functional as F
+from prepare_data import prepareData
+from timing import asMinutes, timeSince
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-BATCH_SIZE = 100
-
-######################################################################
-# Loading data files
-# ==================
-#
-# The data for this project is a set of many thousands of English to
-# French translation pairs.
-#
-# `This question on Open Data Stack
-# Exchange <https://opendata.stackexchange.com/questions/3888/dataset-of-sentences-translated-into-many-languages>`__
-# pointed me to the open translation site https://tatoeba.org/ which has
-# downloads available at https://tatoeba.org/eng/downloads - and better
-# yet, someone did the extra work of splitting language pairs into
-# individual text files here: https://www.manythings.org/anki/
-#
-# The English to French pairs are too big to include in the repo, so
-# download to ``data/eng-fra.txt`` before continuing. The file is a tab
-# separated list of translation pairs:
-#
-# ::
-#
-#     I am cold.    J'ai froid.
-#
-# .. Note::
-#    Download the data from
-#    `here <https://download.pytorch.org/tutorial/data.zip>`_
-#    and extract it to the current directory.
-
-######################################################################
-# Similar to the character encoding used in the character-level RNN
-# tutorials, we will be representing each word in a language as a one-hot
-# vector, or giant vector of zeros except for a single one (at the index
-# of the word). Compared to the dozens of characters that might exist in a
-# language, there are many many more words, so the encoding vector is much
-# larger. We will however cheat a bit and trim the data to only use a few
-# thousand words per language.
-#
-# .. figure:: /_static/img/seq-seq-images/word-encoding.png
-#    :alt:
-#
-#
-
-
-######################################################################
-# We'll need a unique index per word to use as the inputs and targets of
-# the networks later. To keep track of all this we will use a helper class
-# called ``Lang`` which has word → index (``word2index``) and index → word
-# (``index2word``) dictionaries, as well as a count of each word
-# ``word2count`` to use to later replace rare words.
-#
 
 SOS_token = 0
 EOS_token = 1
 PAD_token = 2
 
-class Lang:
-    def __init__(self, name):
-        self.name = name
-        self.word2index = {}
-        self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
-        self.n_words = 3  # Count SOS and EOS and PAD
-
-    def addSentence(self, sentence):
-        for word in sentence.split(' '):
-            self.addWord(word)
-
-    def addWord(self, word):
-        if word not in self.word2index:
-            self.word2index[word] = self.n_words
-            self.word2count[word] = 1
-            self.index2word[self.n_words] = word
-            self.n_words += 1
-        else:
-            self.word2count[word] += 1
-
-
-######################################################################
-# The files are all in Unicode, to simplify we will turn Unicode
-# characters to ASCII, make everything lowercase, and trim most
-# punctuation.
-#
-
-# Turn a Unicode string to plain ASCII, thanks to
-# https://stackoverflow.com/a/518232/2809427
-def unicodeToAscii(s):
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', s)
-        if unicodedata.category(c) != 'Mn'
-    )
-
-# Lowercase, trim, and remove non-letter characters
-
-
-def normalizeString(s):
-    s = unicodeToAscii(s.lower().strip())
-    s = re.sub(r"([.!?])", r" \1", s)
-    s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
-    return s
-
-
-
-######################################################################
-# To read the data file we will split the file into lines, and then split
-# lines into pairs. The files are all English → Other Language, so if we
-# want to translate from Other Language → English I added the ``reverse``
-# flag to reverse the pairs.
-#
-
-def readLangs(lang1, lang2, reverse=False):
-    print("Reading lines...")
-
-    # Read the file and split into lines
-    lines = open('data/%s-%s.txt' % (lang1, lang2), encoding='utf-8').\
-        read().strip().split('\n')
-
-    # Split every line into pairs and normalize
-    pairs = [[normalizeString(s) for s in l.split('\t')] for l in lines]
-
-    # Reverse pairs, make Lang instances
-    if reverse:
-        pairs = [list(reversed(p)) for p in pairs]
-        input_lang = Lang(lang2)
-        output_lang = Lang(lang1)
-    else:
-        input_lang = Lang(lang1)
-        output_lang = Lang(lang2)
-
-    return input_lang, output_lang, pairs
-
-def readInput(vatt_file, question_file, answer_file):
-    triples = []
-    with open(vatt_file) as v:
-        vatts = json.load(v)
-    with open(question_file) as q:
-        questions = json.load(q)
-    with open(answer_file) as a:
-        answers = json.load(a)
-    n = len(questions['questions'])
-    test = 555
-    for i in range(test):
-        img_id = questions['questions'][i]['image_id']
-        qns = questions['questions'][i]['question']
-        vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
-        vatt += [0] * (20*6-len(vatt))
-        for j in range(10):
-            ans = answers['annotations'][i]['answers'][j]['answer']
-            triples.append([vatt, qns, ans])
-
-    return Lang('qns'), Lang('ans'), triples
-
-######################################################################
-# Since there are a *lot* of example sentences and we want to train
-# something quickly, we'll trim the data set to only relatively short and
-# simple sentences. Here the maximum length is 10 words (that includes
-# ending punctuation) and we're filtering to sentences that translate to
-# the form "I am" or "He is" etc. (accounting for apostrophes replaced
-# earlier).
-#
-
+BATCH_SIZE = 100
 MAX_LENGTH = 20
 
-eng_prefixes = (
-    "i am ", "i m ",
-    "he is", "he s ",
-    "she is", "she s ",
-    "you are", "you re ",
-    "we are", "we re ",
-    "they are", "they re "
-)
-
-
-def filterPair(p):
-    return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
-
-
-def filterPairs(pairs):
-    return [pair for pair in pairs if filterPair(pair)]
-
-def filterTriple(t):
-    return len(t[1].split(' ')) < MAX_LENGTH and \
-        len(t[2].split(' ')) < MAX_LENGTH
-
-def filterTriples(triples):
-    return [triple for triple in triples if filterTriple(triple)]
+teacher_forcing_ratio = 0.5
 
 
 ######################################################################
-# The full process for preparing the data is:
-#
-# -  Read text file and split into lines, split lines into pairs
-# -  Normalize text, filter by length and content
-# -  Make word lists from sentences in pairs
-#
 
-def prepareData(lang1, lang2, reverse=False):
-    input_lang, output_lang, pairs = readLangs(lang1, lang2, reverse)
-    print("Read %s sentence pairs" % len(pairs))
-    pairs = filterPairs(pairs)
-    print("Trimmed to %s sentence pairs" % len(pairs))
-    print("Counting words...")
-    for pair in pairs:
-        input_lang.addSentence(pair[0])
-        output_lang.addSentence(pair[1])
-    print("Counted words:")
-    print(input_lang.name, input_lang.n_words)
-    print(output_lang.name, output_lang.n_words)
-    return input_lang, output_lang, pairs
-
-def prepareData2(vatt_file, qns_file, ans_file):
-    input_lang, output_lang, triples = readInput(vatt_file, qns_file, ans_file)
-    print("Read %s sentence triples" % len(triples))
-    print(triples[0])
-    triples = filterTriples(triples)
-    print("Trimmed to %s sentence pairs" % len(triples))
-    print("Counting words...")
-    for triple in triples:
-        input_lang.addSentence(triple[1])
-        output_lang.addSentence(triple[2])
-    print("Counted words:")
-    print(input_lang.name, input_lang.n_words)
-    print(output_lang.name, output_lang.n_words)
-    length = len(triples)
-    return input_lang, output_lang, triples, length
-
-def prepareData3(vatt_file, qns_file, ans_file):
-    input_lang, output_lang, triples = readInput(vatt_file, qns_file, ans_file)
-    print("Read %s sentence triples" % len(triples))
-    triples = filterTriples(triples)
-    print("Trimmed to %s sentence pairs" % len(triples))
-    print("Counting words...")
-    for triple in triples:
-        input_lang.addSentence(triple[1])
-        output_lang.addSentence(triple[2])
-    print("Counted words:")
-    print(input_lang.name, input_lang.n_words)
-    print(output_lang.name, output_lang.n_words)
-    length = len(triples)
-    print('length', length)
-    triples_batch = batch_triples(triples)
-    return input_lang, output_lang, triples_batch, length
-
-def batch_triples(triples):
-    """
-    groups the triples into batches so that we can train in batches rather than one sentence at a time
-    :param triples:
-    :return:
-    """
-    triples_batch = [batch for batch in batch_iter(triples, BATCH_SIZE, shuffle=False)]
-    return triples_batch
-
-
-def batch_iter(data, batch_size, shuffle=False):
-    """ Yield batches of source and target sentences reverse sorted by length (largest to smallest).
-    @param data (list of (src_sent, tgt_sent)): list of tuples containing source and target sentence
-    @param batch_size (int): batch size
-    @param shuffle (boolean): whether to randomly shuffle the dataset
-    """
-    batch_num = math.ceil(len(data) / batch_size)
-    index_array = list(range(len(data)))
-
-    if shuffle:
-        np.random.shuffle(index_array)
-
-    for i in range(batch_num):
-        indices = index_array[i * batch_size: (i + 1) * batch_size]
-        examples = [data[idx] for idx in indices]
-
-        #examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
-        #batch = [e for e in examples]
-
-        yield examples
-
-
-# input_lang, output_lang, pairs = prepareData('eng', 'fra', True)
-# print(random.choice(pairs))
-
-# input_lang, output_lang, triples, nExamples = prepareData3('../Vatt/Vatt20.json',
-#         '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
-#         '../qna_training_coco/v2_mscoco_train2014_annotations.json')
-
-
-
-######################################################################
 
 # .. note:: There are other forms of attention that work around the length
 #   limitation by using a relative position approach. Read about "local
@@ -357,6 +79,11 @@ def tensorFromBatch(input_lang, output_lang, triple_batch):
     target_tensor = torch.tensor(target_list, dtype=torch.long, device=device).view(-1, batch_size)
     return vatt_tensor, input_tensor, target_tensor
 
+def tensorsFromPair(pair):
+    input_tensor = tensorFromSentence(input_lang, pair[0])
+    target_tensor = tensorFromSentence(output_lang, pair[1])
+    return (input_tensor, target_tensor)
+
 def tensorsFromTriples(triple_batch):
     return tensorFromBatch(input_lang, output_lang, triple_batch)
 
@@ -387,8 +114,6 @@ def tensorsFromTriples(triple_batch):
 # choose to use teacher forcing or not with a simple if statement. Turn
 # ``teacher_forcing_ratio`` up to use more of it.
 #
-
-teacher_forcing_ratio = 0.5
 
 
 def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
@@ -442,27 +167,6 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
     return loss.item() / target_length
 
 
-######################################################################
-# This is a helper function to print time elapsed and estimated time
-# remaining given the current time and progress %.
-#
-
-import time
-import math
-
-
-def asMinutes(s):
-    m = math.floor(s / 60)
-    s -= m * 60
-    return '%dm %ds' % (m, s)
-
-
-def timeSince(since, percent):
-    now = time.time()
-    s = now - since
-    es = s / (percent)
-    rs = es - s
-    return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
 
 ######################################################################
@@ -529,66 +233,6 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
     showPlot(plot_losses)
 
 
-######################################################################
-# Evaluation
-# ==========
-#
-# Evaluation is mostly the same as training, but there are no targets so
-# we simply feed the decoder's predictions back to itself for each step.
-# Every time it predicts a word we add it to the output string, and if it
-# predicts the EOS token we stop there. We also store the decoder's
-# attention outputs for display later.
-#
-
-def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
-    with torch.no_grad():
-        input_tensor = tensorFromSentence(input_lang, sentence)
-        input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
-
-        encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
-
-        for ei in range(input_length):
-            encoder_output, encoder_hidden = encoder(input_tensor[ei],
-                                                     encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
-
-        decoder_input = torch.tensor([[SOS_token]], device=device)  # SOS
-
-        decoder_hidden = encoder_hidden
-
-        decoded_words = []
-
-        for di in range(max_length):
-            decoder_output, decoder_hidden, decoder_attention = decoder(
-                decoder_input, decoder_hidden)
-            topv, topi = decoder_output.data.topk(1)
-            if topi.item() == EOS_token:
-                decoded_words.append('<EOS>')
-                break
-            else:
-                decoded_words.append(output_lang.index2word[topi.item()])
-
-            decoder_input = topi.squeeze().detach()
-
-        return decoded_words
-
-
-######################################################################
-# We can evaluate random sentences from the training set and print out the
-# input, target, and output to make some subjective quality judgements:
-#
-
-def evaluateRandomly(encoder, decoder, n=10):
-    for i in range(n):
-        triple = random.choice(triples)
-        print('>', triple[1])
-        print('=', triple[2])
-        output_words = evaluate(encoder, decoder, triple[1])
-        output_sentence = ' '.join(output_words)
-        print('<', output_sentence)
-        print('')
-
 
 ######################################################################
 # Training and Evaluating
@@ -609,17 +253,15 @@ def evaluateRandomly(encoder, decoder, n=10):
 #    encoder and decoder are initialized and run ``trainIters`` again.
 #
 if __name__ == '__main__':
-    input_lang, output_lang, triples, nExamples = prepareData3('../Vatt/Vatt20.json',
+    input_lang, output_lang, triples, nExamples = prepareData('../Vatt/Vatt20.json',
             '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
             '../qna_training_coco/v2_mscoco_train2014_annotations.json')
 
-    print("nExamples",nExamples)
     num_Vatt = 20
     class_prob_boundingbx = 6
     hidden_size = 256
     encoder1 = EncoderRNN(num_Vatt*class_prob_boundingbx, input_lang.n_words).to(device)
     decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
-    #batch_size = int(nExamples / NUM_ITERS_DESIRED) + 1
     epochs = 10
 
     for epoch in range(epochs):
@@ -627,34 +269,3 @@ if __name__ == '__main__':
         trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
         torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
         torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
-        evaluateRandomly(encoder1, decoder1)
-
-######################################################################
-#
-
-    evaluateRandomly(encoder1, decoder1)
-
-
-######################################################################
-# Exercises
-# =========
-#
-# -  Try with a different dataset
-#
-#    -  Another language pair
-#    -  Human → Machine (e.g. IOT commands)
-#    -  Chat → Response
-#    -  Question → Answer
-#
-# -  Replace the embeddings with pre-trained word embeddings such as word2vec or
-#    GloVe
-# -  Try with more layers, more hidden units, and more sentences. Compare
-#    the training time and results.
-# -  If you use a translation file where pairs have two of the same phrase
-#    (``I am test \t I am test``), you can use this as an autoencoder. Try
-#    this:
-#
-#    -  Train as an autoencoder
-#    -  Save only the Encoder network
-#    -  Train a new Decoder for translation from there
-#

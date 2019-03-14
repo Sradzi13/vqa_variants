@@ -1,17 +1,15 @@
 import torch
 import torch.nn as nn
-from torch import optim
 import torch.nn.functional as F
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-BATCH_SIZE = 100
 
 VATT_EMBED_SIZE = 256
 WORD_EMBED_SIZE = 256
 HIDDEN_SIZE = 256
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ######################################################################
+
 # The Seq2Seq Model
 # =================
 #
@@ -75,7 +73,7 @@ class EncoderRNN(nn.Module):
         self.lstm = nn.LSTM(VATT_EMBED_SIZE, HIDDEN_SIZE)
 
     def special_forward(self, vatt, hidden):
-        vatt_embedded = self.vatt_embedding(vatt)#.view(1,BATCH_SIZE,-1)
+        vatt_embedded = self.vatt_embedding(vatt)
         output, hidden = self.lstm(vatt_embedded)
         return output, hidden
 
@@ -87,8 +85,6 @@ class EncoderRNN(nn.Module):
 
     def initHidden(self, batch_size):
         return torch.zeros(1, batch_size, self.hidden_size, device=device)
-
-
 
 ######################################################################
 # The Decoder
@@ -120,7 +116,7 @@ class EncoderRNN(nn.Module):
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__
+        super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(output_size, hidden_size)
@@ -129,8 +125,11 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden):
-        # print('decoder input {}'.format(input.shape))
-        output = self.embedding(input).view(1, input.shape[1], -1)
+        if (len(input.shape) == 1):
+            batch_size = input.shape[0]
+        else:
+            batch_size = input.shape[1]
+        output = self.embedding(input).view(1, batch_size, -1)
         output = F.relu(output)
         output, hidden = self.lstm(output, hidden)
         output = self.softmax(self.out(output[0]))
@@ -138,3 +137,4 @@ class DecoderRNN(nn.Module):
 
     def initHidden(self, batch_size):
         return torch.zeros(1, batch_size, self.hidden_size, device=device)
+######################################################################

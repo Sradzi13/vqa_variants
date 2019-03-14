@@ -159,7 +159,7 @@ def readInput(vatt_file, question_file, answer_file):
     with open(answer_file) as a:
         answers = json.load(a)
     n = len(questions['questions'])
-    #test = 550
+    # test = 55
     for i in range(n):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
@@ -376,15 +376,13 @@ class EncoderRNN(nn.Module):
         return output, hidden
 
     def forward(self, input, hidden):
-        #vatt_embedded = self.vatt_embedding(vatt)
-        embedded = self.word_embedding(input).view(-1, BATCH_SIZE, WORD_EMBED_SIZE)
-        #output = torch.cat((vatt_embedded, embedded), 0) # set the first input to be vatt)
+        embedded = self.word_embedding(input).view(-1, input.shape[1], WORD_EMBED_SIZE)
         output = embedded
         output, hidden = self.lstm(output, hidden)
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
+    def initHidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
 ######################################################################
 # The Decoder
@@ -425,14 +423,18 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden):
-        output = self.embedding(input).view(1, BATCH_SIZE, -1)
+        if (len(input.shape) == 1):
+            batch_size = input.shape[0]
+        else:
+            batch_size = input.shape[1]
+        output = self.embedding(input).view(1, batch_size, -1)
         output = F.relu(output)
         output, hidden = self.lstm(output, hidden)
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
+    def initHidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 ######################################################################
 
 # .. note:: There are other forms of attention that work around the length
@@ -521,7 +523,8 @@ teacher_forcing_ratio = 0.5
 
 
 def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
+    batch_size = input_tensor.size()[1]
+    encoder_hidden = encoder.initHidden(batch_size)
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
@@ -536,8 +539,10 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
             vatt_tensor, encoder_hidden) #vatt_size x batchsz input
 
     encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
-    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
+    decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
     decoder_hidden = encoder_hidden
+
+    print('decoder input: {}'.format(decoder_input.shape))
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -627,7 +632,7 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
         target_tensor = training_triple[2]
 
         print('iter {}:'.format(iter))
-        print('vatt_shape: {}'.format(vatt_tensor.shape))
+        print('vatt_shape: {}'.format(input_tensor.shape))
 
         loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
@@ -694,7 +699,7 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
     with torch.no_grad():
         input_tensor = tensorFromSentence(input_lang, sentence)
         input_length = input_tensor.size()[0]
-        encoder_hidden = encoder.initHidden()
+        encoder_hidden = encoder.initHidden(1)
 
         encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
@@ -731,7 +736,8 @@ def evaluate(encoder, decoder, sentence, max_length=MAX_LENGTH):
 
 def evaluateRandomly(encoder, decoder, n=10):
     for i in range(n):
-        triple = random.choice(triples)
+        triple_batch = random.choice(triples)
+        triple = random.choice(triple_batch)
         print('>', triple[1])
         print('=', triple[2])
         output_words = evaluate(encoder, decoder, triple[1])
@@ -777,12 +783,12 @@ if __name__ == '__main__':
         trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
         torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
         torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
-        evaluateRandomly(encoder1, decoder1)
+        # evaluateRandomly(encoder1, decoder1)
 
 ######################################################################
 #
 
-    evaluateRandomly(encoder1, decoder1)
+    #evaluateRandomly(encoder1, decoder1)
 
 
 ######################################################################

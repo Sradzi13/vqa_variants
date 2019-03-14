@@ -16,6 +16,10 @@ import math
 import torch
 import torch.nn as nn
 from torch import optim
+from encoder_decoder import EncoderRNN, DecoderRNN
+from plot_results import showPlot
+import numpy as np
+
 import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -159,8 +163,8 @@ def readInput(vatt_file, question_file, answer_file):
     with open(answer_file) as a:
         answers = json.load(a)
     n = len(questions['questions'])
-    #test = 550
-    for i in range(n):
+    test = 555
+    for i in range(test):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
         vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
@@ -304,135 +308,7 @@ def batch_iter(data, batch_size, shuffle=False):
 #         '../qna_training_coco/v2_mscoco_train2014_annotations.json')
 
 
-######################################################################
-# The Seq2Seq Model
-# =================
-#
-# A Recurrent Neural Network, or RNN, is a network that operates on a
-# sequence and uses its own output as input for subsequent steps.
-#
-# A `Sequence to Sequence network <https://arxiv.org/abs/1409.3215>`__, or
-# seq2seq network, or `Encoder Decoder
-# network <https://arxiv.org/pdf/1406.1078v3.pdf>`__, is a model
-# consisting of two RNNs called the encoder and decoder. The encoder reads
-# an input sequence and outputs a single vector, and the decoder reads
-# that vector to produce an output sequence.
-#
-# .. figure:: /_static/img/seq-seq-images/seq2seq.png
-#    :alt:
-#
-# Unlike sequence prediction with a single RNN, where every input
-# corresponds to an output, the seq2seq model frees us from sequence
-# length and order, which makes it ideal for translation between two
-# languages.
-#
-# Consider the sentence "Je ne suis pas le chat noir" → "I am not the
-# black cat". Most of the words in the input sentence have a direct
-# translation in the output sentence, but are in slightly different
-# orders, e.g. "chat noir" and "black cat". Because of the "ne/pas"
-# construction there is also one more word in the input sentence. It would
-# be difficult to produce a correct translation directly from the sequence
-# of input words.
-#
-# With a seq2seq model the encoder creates a single vector which, in the
-# ideal case, encodes the "meaning" of the input sequence into a single
-# vector — a single point in some N dimensional space of sentences.
-#
 
-
-######################################################################
-# The Encoder
-# -----------
-#
-# The encoder of a seq2seq network is a RNN that outputs some value for
-# every word from the input sentence. For every input word the encoder
-# outputs a vector and a hidden state, and uses the hidden state for the
-# next input word.
-#
-# .. figure:: /_static/img/seq-seq-images/encoder-network.png
-#    :alt:
-#
-#
-VATT_EMBED_SIZE = 256
-WORD_EMBED_SIZE = 256
-HIDDEN_SIZE = 256
-
-class EncoderRNN(nn.Module):
-    def __init__(self, vatt_size, input_size):
-        super(EncoderRNN, self).__init__()
-        self.hidden_size = HIDDEN_SIZE
-
-        self.vatt_embedding = nn.Embedding(vatt_size, VATT_EMBED_SIZE)
-        self.vatt_embedding = nn.Linear(vatt_size, VATT_EMBED_SIZE, bias = False)
-        self.word_embedding = nn.Embedding(input_size, WORD_EMBED_SIZE)
-        # self.vcap_embedding = nn.Embedding(input_size, VCAP_EMBED_SIZE)
-        # self.vknow_embedding = nn.Embedding(input_size, VKNOW_EMBED_SIZE)
-        # self.lstm = nn.LSTM(VATT_EMBED_SIZE + VCAP_EMBED_SIZE + VKNOW_EMBED_SIZE, hidden_size)
-        self.lstm = nn.LSTM(VATT_EMBED_SIZE, HIDDEN_SIZE)
-
-    def special_forward(self, vatt, hidden):
-        vatt_embedded = self.vatt_embedding(vatt)#.view(1,BATCH_SIZE,-1)
-        output, hidden = self.lstm(vatt_embedded)
-        return output, hidden
-
-    def forward(self, input, hidden):
-        #vatt_embedded = self.vatt_embedding(vatt)
-        embedded = self.word_embedding(input).view(-1, BATCH_SIZE, WORD_EMBED_SIZE)
-        #output = torch.cat((vatt_embedded, embedded), 0) # set the first input to be vatt)
-        output = embedded
-        output, hidden = self.lstm(output, hidden)
-        return output, hidden
-
-    def initHidden(self):
-        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
-
-######################################################################
-# The Decoder
-# -----------
-#
-# The decoder is another RNN that takes the encoder output vector(s) and
-# outputs a sequence of words to create the translation.
-#
-
-
-######################################################################
-# Simple Decoder
-# ^^^^^^^^^^^^^^
-#
-# In the simplest seq2seq decoder we use only last output of the encoder.
-# This last output is sometimes called the *context vector* as it encodes
-# context from the entire sequence. This context vector is used as the
-# initial hidden state of the decoder.
-#
-# At every step of decoding, the decoder is given an input token and
-# hidden state. The initial input token is the start-of-string ``<SOS>``
-# token, and the first hidden state is the context vector (the encoder's
-# last hidden state).
-#
-# .. figure:: /_static/img/seq-seq-images/decoder-network.png
-#    :alt:
-#
-#
-
-class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
-        self.hidden_size = hidden_size
-
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.lstm = nn.LSTM(hidden_size, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
-
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, BATCH_SIZE, -1)
-        output = F.relu(output)
-        output, hidden = self.lstm(output, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden
-
-    def initHidden(self):
-        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
 ######################################################################
 
 # .. note:: There are other forms of attention that work around the length
@@ -481,11 +357,6 @@ def tensorFromBatch(input_lang, output_lang, triple_batch):
     target_tensor = torch.tensor(target_list, dtype=torch.long, device=device).view(-1, batch_size)
     return vatt_tensor, input_tensor, target_tensor
 
-def tensorsFromPair(pair):
-    input_tensor = tensorFromSentence(input_lang, pair[0])
-    target_tensor = tensorFromSentence(output_lang, pair[1])
-    return (input_tensor, target_tensor)
-
 def tensorsFromTriples(triple_batch):
     return tensorFromBatch(input_lang, output_lang, triple_batch)
 
@@ -521,7 +392,8 @@ teacher_forcing_ratio = 0.5
 
 
 def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
+    batch_size = input_tensor.size()[1]
+    encoder_hidden = encoder.initHidden(batch_size)
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
@@ -536,8 +408,10 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
             vatt_tensor, encoder_hidden) #vatt_size x batchsz input
 
     encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
-    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
+    decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
     decoder_hidden = encoder_hidden
+
+    print('decoder input: {}'.format(decoder_input.shape))
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -627,7 +501,7 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
         target_tensor = training_triple[2]
 
         print('iter {}:'.format(iter))
-        print('vatt_shape: {}'.format(vatt_tensor.shape))
+        print('vatt_shape: {}'.format(input_tensor.shape))
 
         loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
@@ -653,30 +527,6 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
 
 
     showPlot(plot_losses)
-
-
-######################################################################
-# Plotting results
-# ----------------
-#
-# Plotting is done with matplotlib, using the array of loss values
-# ``plot_losses`` saved while training.
-#
-
-import matplotlib.pyplot as plt
-plt.switch_backend('agg')
-import matplotlib.ticker as ticker
-import numpy as np
-
-
-def showPlot(points):
-    plt.figure()
-    fig, ax = plt.subplots()
-    # this locator puts ticks at regular intervals
-    loc = ticker.MultipleLocator(base=0.2)
-    ax.yaxis.set_major_locator(loc)
-    plt.plot(points)
-    plt.savefig('losses.png')
 
 
 ######################################################################

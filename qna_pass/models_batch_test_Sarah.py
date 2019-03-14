@@ -159,8 +159,8 @@ def readInput(vatt_file, question_file, answer_file):
     with open(answer_file) as a:
         answers = json.load(a)
     n = len(questions['questions'])
-    #test = 550
-    for i in range(n):
+    test = 555
+    for i in range(test):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
         vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
@@ -376,15 +376,13 @@ class EncoderRNN(nn.Module):
         return output, hidden
 
     def forward(self, input, hidden):
-        #vatt_embedded = self.vatt_embedding(vatt)
-        embedded = self.word_embedding(input).view(-1, BATCH_SIZE, WORD_EMBED_SIZE)
-        #output = torch.cat((vatt_embedded, embedded), 0) # set the first input to be vatt)
+        embedded = self.word_embedding(input).view(-1, input.shape[1], WORD_EMBED_SIZE)
         output = embedded
         output, hidden = self.lstm(output, hidden)
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
+    def initHidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 
 ######################################################################
 # The Decoder
@@ -416,7 +414,7 @@ class EncoderRNN(nn.Module):
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
+        super(DecoderRNN, self).__init__
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(output_size, hidden_size)
@@ -425,14 +423,15 @@ class DecoderRNN(nn.Module):
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, input, hidden):
-        output = self.embedding(input).view(1, BATCH_SIZE, -1)
+        # print('decoder input {}'.format(input.shape))
+        output = self.embedding(input).view(1, input.shape[1], -1)
         output = F.relu(output)
         output, hidden = self.lstm(output, hidden)
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, BATCH_SIZE, self.hidden_size, device=device)
+    def initHidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
 ######################################################################
 
 # .. note:: There are other forms of attention that work around the length
@@ -521,7 +520,8 @@ teacher_forcing_ratio = 0.5
 
 
 def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
+    batch_size = input_tensor.size()[1]
+    encoder_hidden = encoder.initHidden(batch_size)
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
@@ -536,8 +536,10 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
             vatt_tensor, encoder_hidden) #vatt_size x batchsz input
 
     encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
-    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
+    decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
     decoder_hidden = encoder_hidden
+
+    print('decoder input: {}'.format(decoder_input.shape))
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -627,7 +629,7 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
         target_tensor = training_triple[2]
 
         print('iter {}:'.format(iter))
-        print('vatt_shape: {}'.format(vatt_tensor.shape))
+        print('vatt_shape: {}'.format(input_tensor.shape))
 
         loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)

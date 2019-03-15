@@ -101,7 +101,7 @@ def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_le
     loss = 0
 
     decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
-    decoder_output, decoder_hidden = decoder.special_forward(vatt_tensor, decoder_hidden)
+    decoder_output, decoder_hidden = decoder.special_forward(vatt_tensor)
 
     print('decoder input: {}'.format(decoder_input.shape))
 
@@ -112,7 +112,7 @@ def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_le
         for di in range(caption_length):
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
-            loss += criterion(decoder_output, target_tensor[di])
+            loss += criterion(decoder_output, cap_tensor[di])
             decoder_input = cap_tensor[di]  # Teacher forcing
 
     else:
@@ -166,7 +166,7 @@ def trainIters(decoder, pairs, cap_lang, n_examples, print_every=1000, plot_ever
         cap_tensor = training_pair[1]
 
         print('iter {}:'.format(iter))
-        print('vatt_shape: {}'.format(input_tensor.shape))
+        print('vatt_shape: {}'.format(vatt_tensor.shape))
 
         loss = train(vatt_tensor, caption_file, 
                      decoder, decoder_optimizer, criterion)

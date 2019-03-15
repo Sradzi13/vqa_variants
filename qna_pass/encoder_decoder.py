@@ -161,7 +161,7 @@ class CaptionDecoderRNN(nn.Module):
         output = self.softmax(self.out(output[0]))
         return output, hidden
 
-    def special_forward(self, vatt, hidden):
+    def special_forward(self, vatt):
         vatt_embedded = self.vatt_embedding(vatt)
         output, hidden = self.lstm(vatt_embedded)
         return output, hidden

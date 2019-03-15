@@ -1,3 +1,4 @@
+from collections import defaultdict
 import json
 
 
@@ -9,14 +10,19 @@ import json
 # ``word2count`` to use to later replace rare words.
 #
 
+SOS_token = 0
+EOS_token = 1
+PAD_token = 2
+UNK_token = 3
 
 class Lang:
     def __init__(self, name):
         self.name = name
-        self.word2index = {}
+        self.word2index = defaultdict(lambda: UNK_token)
         self.word2count = {}
-        self.index2word = {0: "SOS", 1: "EOS", 2: "PAD"}
-        self.n_words = 3  # Count SOS and EOS and PAD
+        self.index2word = {SOS_token: "SOS", EOS_token: "EOS",
+                           PAD_token: "PAD", UNK_token: "UNK"}
+        self.n_words = 4  # Count SOS, EOS, PAD and UNK
 
     def addSentence(self, sentence):
         for word in sentence.split(' '):

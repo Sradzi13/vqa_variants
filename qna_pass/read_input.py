@@ -29,21 +29,6 @@ from lang import Lang
 #    and extract it to the current directory.
 
 ######################################################################
-# Similar to the character encoding used in the character-level RNN
-# tutorials, we will be representing each word in a language as a one-hot
-# vector, or giant vector of zeros except for a single one (at the index
-# of the word). Compared to the dozens of characters that might exist in a
-# language, there are many many more words, so the encoding vector is much
-# larger. We will however cheat a bit and trim the data to only use a few
-# thousand words per language.
-#
-# .. figure:: /_static/img/seq-seq-images/word-encoding.png
-#    :alt:
-#
-#
-
-
-######################################################################
 # To read the data file we will split the file into lines, and then split
 # lines into pairs. The files are all English → Other Language, so if we
 # want to translate from Other Language → English I added the ``reverse``
@@ -59,7 +44,6 @@ def readInput(vatt_file, question_file, answer_file):
     with open(answer_file) as a:
         answers = json.load(a)
     n = len(questions['questions'])
-    # test = 55
     for i in range(n):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
@@ -70,3 +54,18 @@ def readInput(vatt_file, question_file, answer_file):
             triples.append([vatt, qns, ans])
 
     return Lang('qns'), Lang('ans'), triples
+
+
+def readCaptions(vatt_file, caption_file):
+    pairs = []
+    with open(vatt_file) as v:
+        vatts = json.load(v)
+    with open(caption_file) as c:
+        caps = json.load(c)
+    n = len(caps)
+    for img in vatts:
+        cap = caps[vatt]
+        vatt = vatts[img]
+        pairs.append([vatt, cap])
+
+    return Lang('cap'), pairs

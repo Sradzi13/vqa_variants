@@ -64,7 +64,6 @@ class EncoderRNN(nn.Module):
         super(EncoderRNN, self).__init__()
         self.hidden_size = HIDDEN_SIZE
 
-        self.vatt_embedding = nn.Embedding(vatt_size, VATT_EMBED_SIZE)
         self.vatt_embedding = nn.Linear(vatt_size, VATT_EMBED_SIZE, bias = False)
         self.word_embedding = nn.Embedding(input_size, WORD_EMBED_SIZE)
         # self.vcap_embedding = nn.Embedding(input_size, VCAP_EMBED_SIZE)
@@ -112,7 +111,7 @@ class EncoderRNN(nn.Module):
 # .. figure:: /_static/img/seq-seq-images/decoder-network.png
 #    :alt:
 #
-#
+# used for qna_pass
 
 class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
@@ -133,6 +132,38 @@ class DecoderRNN(nn.Module):
         output = F.relu(output)
         output, hidden = self.lstm(output, hidden)
         output = self.softmax(self.out(output[0]))
+        return output, hidden
+
+    def initHidden(self, batch_size):
+        return torch.zeros(1, batch_size, self.hidden_size, device=device)
+######################################################################
+
+class CaptionDecoderRNN(nn.Module):
+    def __init__(self, vatt_size, hidden_size, output_size):
+        super(DecoderRNN, self).__init__()
+        self.hidden_size = hidden_size
+
+        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.vatt_embedding = nn.Linear(vatt_size, hidden_size, bias = False)
+
+        self.lstm = nn.LSTM(hidden_size, hidden_size)
+        self.out = nn.Linear(hidden_size, output_size)
+        self.softmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, input, hidden):
+        if (len(input.shape) == 1):
+            batch_size = input.shape[0]
+        else:
+            batch_size = input.shape[1]
+        output = self.embedding(input).view(1, batch_size, -1)
+        output = F.relu(output)
+        output, hidden = self.lstm(output, hidden)
+        output = self.softmax(self.out(output[0]))
+        return output, hidden
+
+    def special_forward(self, vatt, hidden):
+        vatt_embedded = self.vatt_embedding(vatt)
+        output, hidden = self.lstm(vatt_embedded)
         return output, hidden
 
     def initHidden(self, batch_size):

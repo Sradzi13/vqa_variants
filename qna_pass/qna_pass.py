@@ -4,10 +4,8 @@ QNA model
 modified from Translation with a Sequence to Sequence Network and Attention
 *************************************************************
 **Author**: `Sean Robertson <https://github.com/spro/practical-pytorch>`_
+
 """
-
-import argparse
-
 from io import open
 import random
 import torch
@@ -15,14 +13,16 @@ import torch.nn as nn
 from torch import optim
 import time
 
-from encoder_decoder import EncoderRNN, DecoderRNN, CaptionDecoderRNN
+from encoder_decoder import EncoderRNN, DecoderRNN
 from plot_results import showPlot
-from prepare_data import prepareData, prepareCaptions, shuffle_batched_pairs
+from prepare_data import prepareData
 from timing import asMinutes, timeSince
 
-from lang import SOS_token, EOS_token, PAD_token, UNK_token
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+SOS_token = 0
+EOS_token = 1
+PAD_token = 2
 
 BATCH_SIZE = 100
 MAX_LENGTH = 20
@@ -46,21 +46,23 @@ def padSentInds(lang, sentence):
     padded = no_padding + ([PAD_token] * (MAX_LENGTH - len(no_padding)))
     return padded
 
-def indexesFromBatch(cap_lang, pairs_batch):
-    vatt_list = [pair[0] for pair in pairs_batch]
-    cap_list = [padSentInds(cap_lang, pair[1]) for pair in pairs_batch]
-    return vatt_list, cap_list
+def indexesFromBatch(input_lang, output_lang, triple_batch):
+    vatt_list = [triple[0] for triple in triple_batch]
+    input_list = [padSentInds(input_lang, triple[1]) for triple in triple_batch]
+    target_list = [padSentInds(output_lang, triple[2]) for triple in triple_batch]
+    return vatt_list, input_list, target_list,
 
 
-def tensorFromBatch(cap_lang, pairs_batch):
-    vatt_list, cap_list = indexesFromBatch(cap_lang, pairs_batch)
+def tensorFromBatch(input_lang, output_lang, triple_batch):
+    vatt_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
     batch_size = len(vatt_list)
     vatt_tensor = torch.tensor(vatt_list, device=device, dtype=torch.float).view(1, batch_size, -1)
-    cap_tensor = torch.tensor(cap_list, dtype=torch.long, device=device).view(-1, batch_size)
-    return vatt_tensor, cap_tensor
+    input_tensor = torch.tensor(input_list, dtype=torch.long, device=device).view(-1, batch_size)
+    target_tensor = torch.tensor(target_list, dtype=torch.long, device=device).view(-1, batch_size)
+    return vatt_tensor, input_tensor, target_tensor
 
-def tensorsFromPairs(cap_lang, pairs_batch):
-    return tensorFromBatch(cap_lang, pairs_batch)
+def tensorsFromTriples(triple_batch):
+    return tensorFromBatch(input_lang, output_lang, triple_batch)
 
 
 ######################################################################
@@ -91,16 +93,25 @@ def tensorsFromPairs(cap_lang, pairs_batch):
 #
 
 
-def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    batch_size = cap_tensor.size()[1]
+def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
+    batch_size = input_tensor.size()[1]
+    encoder_hidden = encoder.initHidden(batch_size)
+    encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
-    caption_length = cap_tensor.size(0)
+    input_length = input_tensor.size(0)
+    target_length = target_tensor.size(0)
+
+    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
 
+    encoder_output, encoder_hidden = encoder.special_forward(
+            vatt_tensor, encoder_hidden) #vatt_size x batchsz input
+
+    encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
     decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
-    decoder_output, decoder_hidden = decoder.special_forward(vatt_tensor, decoder_hidden)
+    decoder_hidden = encoder_hidden
 
     print('decoder input: {}'.format(decoder_input.shape))
 
@@ -108,28 +119,29 @@ def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_le
 
     if use_teacher_forcing:
         # Teacher forcing: Feed the target as the next input
-        for di in range(caption_length):
+        for di in range(target_length):
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
             loss += criterion(decoder_output, target_tensor[di])
-            decoder_input = cap_tensor[di]  # Teacher forcing
+            decoder_input = target_tensor[di]  # Teacher forcing
 
     else:
         # Without teacher forcing: use its own predictions as the next input
         #decoder_inputs = np.array()
-        final_losses = [0] * caption_length
-        for di in range(caption_length):
+        final_losses = [0] * target_length
+        for di in range(target_length):
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
             topv, topi = decoder_output.topk(1)
             decoder_input = topi.squeeze().detach()  # detach from history as input
-            loss += criterion(decoder_output, cap_tensor[di])
+            loss += criterion(decoder_output, target_tensor[di])
 
     loss.backward()
 
+    encoder_optimizer.step()
     decoder_optimizer.step()
 
-    return loss.item() / caption_length
+    return loss.item() / target_length
 
 
 
@@ -146,29 +158,34 @@ def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_le
 # of examples, time so far, estimated time) and average loss.
 #
 
-def trainIters(decoder, pairs, n_examples, print_every=1000, plot_every=100, learning_rate=0.01, save_every=1000):
+def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, learning_rate=0.01, save_every=1000):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
     plot_loss_total = 0  # Reset every plot_every
 
+    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
     print('start map to tensor')
-    training_pairs = [tensorsFromPairs(i) for i in pairs]
+    training_triples = [tensorsFromTriples(i) for i in triples]
     print('end map to tensor')
+    print('start shuffle')
+    random.shuffle(training_triples)
+    print('end shuffle')
     criterion = nn.NLLLoss(ignore_index=PAD_token)
 
     n_iters = int(n_examples / BATCH_SIZE)
     for iter in range(1, n_iters + 1):
-        training_pair = training_pairs[iter - 1]
-        vatt_tensor = training_pair[0] # v_att * batchsz
-        cap_tensor = training_pair[1]
+        training_triple = training_triples[iter - 1]
+        vatt_tensor = training_triple[0] # v_att * batchsz
+        input_tensor = training_triple[1]
+        target_tensor = training_triple[2]
 
         print('iter {}:'.format(iter))
         print('vatt_shape: {}'.format(input_tensor.shape))
 
-        loss = train(vatt_tensor, caption_file, 
-                     decoder, decoder_optimizer, criterion)
+        loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
+                     decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
         plot_loss_total += loss
 
@@ -186,7 +203,8 @@ def trainIters(decoder, pairs, n_examples, print_every=1000, plot_every=100, lea
         if iter % save_every == 0:
             with open('record.txt', 'w') as f:
                 f.write(str(iter)+'\n')
-            torch.save(decoder, 'decoder_iter_{:d}.pt'.format(iter%10000))
+            torch.save(encoder1, 'encoder_iter_{:d}.pt'.format(iter%10000))
+            torch.save(decoder1, 'decoder_iter_{:d}.pt'.format(iter%10000))
 
 
     showPlot(plot_losses)
@@ -208,23 +226,19 @@ def trainIters(decoder, pairs, n_examples, print_every=1000, plot_every=100, lea
 #
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('vatt', help='vatt file')
-    parser.add_argument('cap', help='caption file')
-    args = parser.parse_args()
+    input_lang, output_lang, triples, nExamples = prepareData('../Vatt/Vatt20.json',
+            '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
+            '../qna_training_coco/v2_mscoco_train2014_annotations.json')
 
-    vatts = args.vatt
-    caps = args.cap
-
-    cap_lang, batch_pairs, nExamples = prepareCaptions(vatts, caps)
-
-    vatt_size = 1020
+    num_Vatt = 20
+    class_prob_boundingbx = 6
     hidden_size = 256
-    caption_decoder = CaptionDecoderRNN(vatt_size, hidden_size, cap_lang.n_words).to(device)
+    encoder1 = EncoderRNN(num_Vatt*class_prob_boundingbx, input_lang.n_words).to(device)
+    decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
     epochs = 10
 
     for epoch in range(epochs):
         print('Epoch {:d}'.format(epoch))
-        trainIters(caption_decoder, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
-        batch_pair = shuffle_batched_pairs(batch_pairs)
-        torch.save(caption_decoder, 'caption_decoder_epoch_{:d}.pt'.format(epoch))
+        trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
+        torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
+        torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))

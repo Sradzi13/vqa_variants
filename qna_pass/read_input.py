@@ -65,7 +65,8 @@ def readCaptions(vatt_file, caption_file):
     n = len(captions)
     for img in vatts:
         caps = captions[img]
-        vatt = vatts[img]
+        vatt_string = vatts[img].split(' ')
+        vatt = [float(i) for i in vatt_string]
         for cap in caps:
             pairs.append([vatt, cap])
 

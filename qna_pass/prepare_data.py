@@ -21,7 +21,7 @@ def filterTriples(triples):
     return [triple for triple in triples if filterTriple(triple)]
 
 def filterPair(p):
-    return len(t[1].split(' ')) < MAX_CAP_LENGTH
+    return len(p[1].split(' ')) < MAX_CAP_LENGTH
 
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
@@ -96,7 +96,7 @@ def prepareCaptions(vatt_file, caption_file):
     print(cap_lang.name, cap_lang.n_words)
     length = len(pairs)
     print('length', length)
-    pairs_batch = batch_examples(pairs, true)
+    pairs_batch = batch_examples(pairs, True)
     return cap_lang, pairs_batch, length
 
 

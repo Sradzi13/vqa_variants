@@ -7,6 +7,7 @@ modified from Translation with a Sequence to Sequence Network and Attention
 """
 
 import argparse
+import dill
 
 from io import open
 import random
@@ -146,7 +147,7 @@ def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_le
 # of examples, time so far, estimated time) and average loss.
 #
 
-def trainIters(decoder, pairs, n_examples, print_every=1000, plot_every=100, learning_rate=0.01, save_every=1000):
+def trainIters(decoder, pairs, cap_lang, n_examples, print_every=1000, plot_every=100, learning_rate=0.01, save_every=1000):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
@@ -154,7 +155,7 @@ def trainIters(decoder, pairs, n_examples, print_every=1000, plot_every=100, lea
 
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
     print('start map to tensor')
-    training_pairs = [tensorsFromPairs(i) for i in pairs]
+    training_pairs = [tensorsFromPairs(cap_lang, i) for i in pairs]
     print('end map to tensor')
     criterion = nn.NLLLoss(ignore_index=PAD_token)
 
@@ -217,6 +218,8 @@ if __name__ == '__main__':
     caps = args.cap
 
     cap_lang, batch_pairs, nExamples = prepareCaptions(vatts, caps)
+    with open('caption_lang.pickle', 'wb') as f:
+        dill.dump(cap_lang, f)
 
     vatt_size = 1020
     hidden_size = 256
@@ -225,6 +228,6 @@ if __name__ == '__main__':
 
     for epoch in range(epochs):
         print('Epoch {:d}'.format(epoch))
-        trainIters(caption_decoder, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
+        trainIters(caption_decoder, batch_pairs, cap_lang, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
         batch_pair = shuffle_batched_pairs(batch_pairs)
         torch.save(caption_decoder, 'caption_decoder_epoch_{:d}.pt'.format(epoch))

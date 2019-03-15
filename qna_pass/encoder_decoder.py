@@ -140,7 +140,7 @@ class DecoderRNN(nn.Module):
 
 class CaptionDecoderRNN(nn.Module):
     def __init__(self, vatt_size, hidden_size, output_size):
-        super(DecoderRNN, self).__init__()
+        super(CaptionDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(output_size, hidden_size)

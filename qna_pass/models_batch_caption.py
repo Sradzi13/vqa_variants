@@ -103,7 +103,7 @@ def train(vatt_tensor, cap_tensor, decoder, decoder_optimizer, criterion, max_le
     decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
     decoder_output, decoder_hidden = decoder.special_forward(vatt_tensor)
 
-    print('decoder input: {}'.format(decoder_input.shape))
+    # print('decoder input: {}'.format(decoder_input.shape))
 
     use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
@@ -165,10 +165,10 @@ def trainIters(decoder, pairs, cap_lang, n_examples, print_every=1000, plot_ever
         vatt_tensor = training_pair[0] # v_att * batchsz
         cap_tensor = training_pair[1]
 
-        print('iter {}:'.format(iter))
-        print('vatt_shape: {}'.format(vatt_tensor.shape))
+        # print('iter {}:'.format(iter))
+        # print('vatt_shape: {}'.format(vatt_tensor.shape))
 
-        loss = train(vatt_tensor, caption_file, 
+        loss = train(vatt_tensor, cap_tensor,
                      decoder, decoder_optimizer, criterion)
         print_loss_total += loss
         plot_loss_total += loss
@@ -187,7 +187,7 @@ def trainIters(decoder, pairs, cap_lang, n_examples, print_every=1000, plot_ever
         if iter % save_every == 0:
             with open('record.txt', 'w') as f:
                 f.write(str(iter)+'\n')
-            torch.save(decoder, 'decoder_iter_{:d}.pt'.format(iter%10000))
+            torch.save(decoder, 'caption_decoder_iter_{:d}.pt'.format(iter%10000))
 
 
     showPlot(plot_losses)
@@ -224,10 +224,11 @@ if __name__ == '__main__':
     vatt_size = 1020
     hidden_size = 256
     caption_decoder = CaptionDecoderRNN(vatt_size, hidden_size, cap_lang.n_words).to(device)
-    epochs = 10
+    epochs = 50
 
     for epoch in range(epochs):
         print('Epoch {:d}'.format(epoch))
         trainIters(caption_decoder, batch_pairs, cap_lang, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
-        batch_pair = shuffle_batched_pairs(batch_pairs)
-        torch.save(caption_decoder, 'caption_decoder_epoch_{:d}.pt'.format(epoch))
+        batch_pairs = shuffle_batched_pairs(batch_pairs)
+        if (epoch % 10 == 0):
+            torch.save(caption_decoder, 'caption_decoder_epoch_{:d}.pt'.format(epoch))

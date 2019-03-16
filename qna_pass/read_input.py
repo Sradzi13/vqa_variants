@@ -71,3 +71,21 @@ def readCaptions(vatt_file, caption_file):
             pairs.append([vatt, cap])
 
     return Lang('cap'), pairs
+
+def readCaptions_with_name(vatt_file, caption_file):
+    pairs = []
+    names = []
+    with open(vatt_file) as v:
+        vatts = json.load(v)
+    with open(caption_file) as c:
+        captions = json.load(c)
+    n = len(captions)
+    for img in vatts:
+        caps = captions[img]
+        vatt_string = vatts[img].split(' ')
+        vatt = [float(i) for i in vatt_string]
+        for cap in caps:
+            pairs.append([vatt, cap])
+            names.append(img)
+
+    return Lang('cap'), pairs, names

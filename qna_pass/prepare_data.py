@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from read_input import readInput, readCaptions
+from read_input import readInput, readCaptions, readCaptions_with_name
 
 BATCH_SIZE = 100
 MAX_QA_LENGTH = 20
@@ -26,6 +26,14 @@ def filterPair(p):
 def filterPairs(pairs):
     return [pair for pair in pairs if filterPair(pair)]
 
+def filterPairs_with_names(pairs, names):
+    pairs_o = []
+    names_o = []
+    for (i, pair) in enumerate(pairs):
+        if filterPair(pair):
+            pairs_o.append(pair)
+            names_o.append(names[i])
+    return pairs_o, names_o
 
 ######################################################################
 # The full process for preparing the data is:
@@ -80,25 +88,52 @@ def batch_iter(data, batch_size, shuffle=False):
         examples = [data[idx] for idx in indices]
         yield examples
 
-def prepareCaptions(vatt_file, caption_file):
+def prepareCaptions(vatt_file, caption_file, cap_lang=None):
     """
     Produces pairs matching vatt to captions
     @return cap_lang, pairs, length
     """
-    cap_lang, pairs = readCaptions(vatt_file, caption_file)
+    if cap_lang is None:
+        cap_lang, pairs = readCaptions(vatt_file, caption_file)
+    else:
+        _, pairs = readCaptions(vatt_file, caption_file)
     print("Read %s images" % len(pairs))
     pairs = filterPairs(pairs)
     print("Trimmed to %s images" % len(pairs))
-    print("Counting words...")
-    for pair in pairs:
-        cap_lang.addSentence(pair[1])
-    print("Counted words:")
-    print(cap_lang.name, cap_lang.n_words)
+    if cap_lang is None:
+        print("Counting words...")
+        for pair in pairs:
+            cap_lang.addSentence(pair[1])
+        print("Counted words:")
+        print(cap_lang.name, cap_lang.n_words)
     length = len(pairs)
     print('length', length)
     pairs_batch = batch_examples(pairs, True)
     return cap_lang, pairs_batch, length
 
+def prepareCaptions_with_names(vatt_file, caption_file, cap_lang=None):
+    """
+    Produces pairs matching vatt to captions
+    Differs from prepareCaptions by including image-names
+    @return cap_lang, pairs, length
+    """
+    if cap_lang is None:
+        cap_lang, pairs, names = readCaptions_with_name(vatt_file, caption_file)
+    else:
+        _, pairs, names = readCaptions_with_name(vatt_file, caption_file)
+    print("Read %s images" % len(pairs))
+    pairs, names = filterPairs_with_names(pairs, names)
+    print("Trimmed to %s images" % len(pairs))
+    if cap_lang is None:
+        print("Counting words...")
+        for pair in pairs:
+            cap_lang.addSentence(pair[1])
+        print("Counted words:")
+        print(cap_lang.name, cap_lang.n_words)
+    length = len(pairs)
+    print('length', length)
+    pairs_batch = batch_examples((pairs, names), True)
+    return cap_lang, pairs_batch, length
 
 def shuffle_batched_pairs(examples_batch):
     """
@@ -107,5 +142,5 @@ def shuffle_batched_pairs(examples_batch):
     examples = []
     for batch in examples_batch:
         examples.extend(batch)
-    return batch_examples(examples, shuffle)
+    return batch_examples(examples, True)
 

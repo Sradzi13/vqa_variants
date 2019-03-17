@@ -238,7 +238,6 @@ if __name__ == '__main__':
     input_lang, output_lang, batch_triples, nExamples = prepareData(vatts, vcaps, vknows,
                                                               '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
                                                               '../qna_training_coco/v2_mscoco_train2014_annotations.json')
-
     vatt_size = 1020
     vknow_size = 300
     hidden_size = 256

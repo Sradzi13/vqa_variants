@@ -14,7 +14,8 @@ BATCH_SIZE = 100
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def generate(vatt_tensor, caption_length, device):
-    decoder_input = torch.tensor([[SOS_token] * BATCH_SIZE], device=device)
+    batch_size = vatt_tensor.shape[1]
+    decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
     decoder_output, decoder_hidden = decoder.special_forward(vatt_tensor)
 
     decoded = []
@@ -37,6 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('lang', help='lang file')
     parser.add_argument('caps', help='caption file')
     parser.add_argument('num', help='number of images to process', type=int)
+    parser.add_argument('output_file', help='vcaps file')
     args = parser.parse_args()
 
     decoder = torch.load(args.decoder_file)
@@ -48,9 +50,13 @@ if __name__ == '__main__':
     pairs_list = [(tensorsFromPairs(caption_lang, i), imgs_name)
                     for (i, imgs_name) in pairs_batch]
 
+    vcaps = {}
     for (batch, imgs_name) in pairs_list:
         vatt_tensor, cap_tensor = batch
         decoded, decoder_hidden = generate(vatt_tensor, MAX_CAP_LENGTH, device)
-        print(imgs_name)
-        print(decoded)
+        for i, name in enumerate(imgs_name):
+            vcaps[name] = decoder_hidden[0][0, i].detach().cpu().numpy().tolist()
+
+    with open(args.output_file, 'w') as f:
+        json.dump(vcaps, f)
 

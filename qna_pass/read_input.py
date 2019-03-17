@@ -35,12 +35,12 @@ from lang import Lang
 # flag to reverse the pairs.
 #
 
-def readInput(vatt_file, vcap_file, vknow_file, question_file, answer_file):
+def readInput(vatt_file, vatt20_file, vknow_file, question_file, answer_file):
     infosets = []
     with open(vatt_file) as v:
         vatts = json.load(v)
-    with open(vcap_file) as v:
-        vcaps = json.load(v)
+    with open(vatt20_file) as v:
+        vatts20 = json.load(v)
     with open(vknow_file) as v:
         vknows = json.load(v)
     with open(question_file) as q:
@@ -52,14 +52,16 @@ def readInput(vatt_file, vcap_file, vknow_file, question_file, answer_file):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
 
-        vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
-        vcap = vcaps['COCO_train2014_{:012d}.jpg'.format(img_id)]
-        vknow = vknows['COCO_train2014_{:012d}.jpg'.format(img_id)]
+        vatt_string = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)].split(' ')
+        vatt = [float(i) for i in vatt_string]
+        vatt20_string = vatts20['COCO_train2014_{:012d}.jpg'.format(img_id)]
+        vatt20 = [float(i) for i in vatt20_string]
+        vknow_string = vknows['COCO_train2014_{:012d}.jpg'.format(img_id)].split(' ')
+        vknow = [float(i) for i in vknow_string]
 
         for j in range(10):
             ans = answers['annotations'][i]['answers'][j]['answer']
-            infosets.append([vatt, vcap, vknow, qns, ans])
-
+            infosets.append([vatt, vatt20, vknow, qns, ans])
     return Lang('qns'), Lang('ans'), infosets
 
 

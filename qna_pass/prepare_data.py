@@ -14,8 +14,8 @@ MAX_CAP_LENGTH = 20
 #
 
 def filterTriple(t):
-    return len(t[1].split(' ')) < MAX_QA_LENGTH and \
-        len(t[2].split(' ')) < MAX_QA_LENGTH
+    return len(t[3].split(' ')) < MAX_QA_LENGTH and \
+        len(t[4].split(' ')) < MAX_QA_LENGTH
 
 def filterTriples(triples):
     return [triple for triple in triples if filterTriple(triple)]
@@ -43,15 +43,15 @@ def filterPairs_with_names(pairs, names):
 # -  Make word lists from sentences in pairs
 #
 
-def prepareData(vatt_file, vcap_file, vknow_file, qns_file, ans_file):
-    input_lang, output_lang, triples = readInput(vatt_file, vcap_file, vknow_file, qns_file, ans_file)
+def prepareData(vatt_file, vatt20_file, vknow_file, qns_file, ans_file):
+    input_lang, output_lang, triples = readInput(vatt_file, vatt20_file, vknow_file, qns_file, ans_file)
     print("Read %s sentence triples" % len(triples))
     triples = filterTriples(triples)
     print("Trimmed to %s sentence pairs" % len(triples))
     print("Counting words...")
     for triple in triples:
-        input_lang.addSentence(triple[1])
-        output_lang.addSentence(triple[2])
+        input_lang.addSentence(triple[3])
+        output_lang.addSentence(triple[4])
     print("Counted words:")
     print(input_lang.name, input_lang.n_words)
     print(output_lang.name, output_lang.n_words)

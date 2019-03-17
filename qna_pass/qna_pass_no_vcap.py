@@ -47,25 +47,22 @@ def padSentInds(lang, sentence):
 
 def indexesFromBatch(input_lang, output_lang, triple_batch):
     vatt_list = [triple[0] for triple in triple_batch]
-    vcap_list = [triple[1] for triple in triple_batch]
+    vatt20_list = [triple[1] for triple in triple_batch]
     vknow_list = [triple[2] for triple in triple_batch]
     input_list = [padSentInds(input_lang, triple[3]) for triple in triple_batch]
     target_list = [padSentInds(output_lang, triple[4]) for triple in triple_batch]
-    return vatt_list, vcap_list, vknow_list, input_list, target_list,
+    return vatt_list, vatt20_list, vknow_list, input_list, target_list,
 
 
 def tensorFromBatch(input_lang, output_lang, triple_batch):
-    vatt_list, vcap_list, vknow_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
+    vatt_list, vatt20_list, vknow_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
     batch_size = len(vatt_list)
     vatt_tensor = torch.tensor(vatt_list, device=device, dtype=torch.float).view(1, batch_size, -1)
-    vcap_tensor = torch.tensor(vcap_list, device=device, dtype=torch.float).view(1, batch_size, -1)
-    vknow_tensor = torch.tensor(vknow_list, device=device, dtype=torch.float).view(1, batch_size, -1)    
-    print("vknow_tensor", len(vknow_list),
-          torch.tensor(vknow_list, device=device, dtype=torch.float).size(),
-          vknow_tensor.size())
+    vatt20_tensor = torch.tensor(vatt20_list, device=device, dtype=torch.float).view(1, batch_size, -1)
+    vknow_tensor = torch.tensor(vknow_list, device=device, dtype=torch.float).view(1, batch_size, -1)
     input_tensor = torch.tensor(input_list, dtype=torch.long, device=device).view(-1, batch_size)
     target_tensor = torch.tensor(target_list, dtype=torch.long, device=device).view(-1, batch_size)
-    return vatt_tensor, vcap_tensor, vknow_tensor, input_tensor, target_tensor
+    return vatt_tensor, vatt20_tensor, vknow_tensor, input_tensor, target_tensor
 
 def tensorsFromTriples(triple_batch):
     return tensorFromBatch(input_lang, output_lang, triple_batch)
@@ -99,7 +96,7 @@ def tensorsFromTriples(triple_batch):
 #
 
 
-def train(vatt_tensor, vcap_tensor, vknow_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
+def train(vatt_tensor, vatt20_tensor, vknow_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     batch_size = input_tensor.size()[1]
     encoder_hidden = encoder.initHidden(batch_size)
     encoder_optimizer.zero_grad()
@@ -113,7 +110,7 @@ def train(vatt_tensor, vcap_tensor, vknow_tensor, input_tensor, target_tensor, e
     loss = 0
 
     encoder_output, encoder_hidden = encoder.special_forward(
-        vatt_tensor, vcap_tensor, vknow_tensor, encoder_hidden)
+        vatt_tensor, vatt20_tensor, vknow_tensor, encoder_hidden)
 
     encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
     decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
@@ -184,7 +181,7 @@ def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_eve
         training_triple = training_triples[iter - 1]
 
         vatt_tensor = training_triple[0] # v_att * batchsz
-        vcap_tensor = training_triple[1]
+        vatt20_tensor = training_triple[1]
         vknow_tensor = training_triple[2]
         input_tensor = training_triple[3]
         target_tensor = training_triple[4]
@@ -192,7 +189,7 @@ def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_eve
         #print('iter {}:'.format(iter))
         #print('vatt_shape: {}'.format(input_tensor.shape))
 
-        loss = train(vatt_tensor, vcap_tensor, vknow_tensor, input_tensor, target_tensor, encoder,
+        loss = train(vatt_tensor, vatt20_tensor, vknow_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
 
         print_loss_total += loss
@@ -236,24 +233,24 @@ def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_eve
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('vatt', help='vatt file')
-    parser.add_argument('vcap', help='vcap file')
+    parser.add_argument('vatt20', help='vatt20 file')
     parser.add_argument('vknow', help='vknow file')
 
     args = parser.parse_args()
 
     vatts = args.vatt
-    vcaps = args.vcap
+    vatts20 = args.vatt20
     vknows = args.vknow
 
 
-    input_lang, output_lang, batch_triples, nExamples = prepareData(vatts, vcaps, vknows,
+    input_lang, output_lang, batch_triples, nExamples = prepareData(vatts, vatts20, vknows,
                                                               '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
                                                               '../qna_training_coco/v2_mscoco_train2014_annotations.json')
     vatt_size = 1020
-    vcap_size = 256
+    vatt20_size = 120
     vknow_size = 300
     hidden_size = 256
-    encoder1 = EncoderRNN(vatt_size, vcap_size, vknow_size, input_lang.n_words).to(device)
+    encoder1 = EncoderRNN(vatt_size, vatt20_size, vknow_size, input_lang.n_words).to(device)
     decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
     epochs = 10
 

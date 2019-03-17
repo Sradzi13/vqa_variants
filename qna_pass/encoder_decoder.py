@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 VATT_EMBED_SIZE = 256
+VATT20_EMBED_SIZE = 256
 VCAP_EMBED_SIZE = 256
 VKNOW_EMBED_SIZE = 256
 WORD_EMBED_SIZE = 256
@@ -62,22 +63,22 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class EncoderRNN(nn.Module):
 
-    def __init__(self, vatt_size, vcap_size, vknow_size, input_size):
+    def __init__(self, vatt_size, vatt20_size, vknow_size, input_size):
         super(EncoderRNN, self).__init__()
         self.hidden_size = HIDDEN_SIZE
         self.vatt_embedding = nn.Linear(vatt_size, VATT_EMBED_SIZE, bias = False)
-        self.vcap_embedding = nn.Linear(vcap_size, VCAP_EMBED_SIZE, bias = False)
+        self.vatt20_embedding = nn.Linear(vatt20_size, VATT20_EMBED_SIZE, bias = False)
         self.vknow_embedding = nn.Linear(vknow_size, VKNOW_EMBED_SIZE, bias = False)
-        self.vcombo_embedding = nn.Linear(VATT_EMBED_SIZE+VCAP_EMBED_SIZE+VKNOW_EMBED_SIZE, WORD_EMBED_SIZE, bias = False)
+        self.vcombo_embedding = nn.Linear(VATT_EMBED_SIZE+VATT20_EMBED_SIZE+VKNOW_EMBED_SIZE, WORD_EMBED_SIZE, bias = False)
         self.word_embedding = nn.Embedding(input_size, WORD_EMBED_SIZE)
-        self.lstm = nn.LSTM(COMBO_EMBED_SIZE, HIDDEN_SIZE)
+        self.lstm = nn.LSTM(WORD_EMBED_SIZE, HIDDEN_SIZE)
 
 
-    def special_forward(self, vatt, vcap, vknow, hidden):
+    def special_forward(self, vatt, vatt20, vknow, hidden):
         vatt_embedded = self.vatt_embedding(vatt)
-        vcap_embedded = self.vcap_embedding(vcap)
+        vatt20_embedded = self.vatt20_embedding(vatt20)
         vknow_embedded = self.vknow_embedding(vknow)
-        vcombo = torch.cat((vatt_embedded, vcap_embedded, vknow_embedded), dim=2)
+        vcombo = torch.cat((vatt_embedded, vatt20_embedded, vknow_embedded), dim=2)
         vcombo_embedded = self.vcombo_embedding(vcombo)
         output, hidden = self.lstm(vcombo_embedded)
         return output, hidden

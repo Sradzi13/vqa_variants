@@ -35,10 +35,14 @@ from lang import Lang
 # flag to reverse the pairs.
 #
 
-def readInput(vatt_file, question_file, answer_file):
-    triples = []
+def readInput(vatt_file, vcap_file, vknow_file, question_file, answer_file):
+    infosets = []
     with open(vatt_file) as v:
         vatts = json.load(v)
+    with open(vcap_file) as v:
+        vcaps = json.load(v)
+    with open(vknow_file) as v:
+        vknows = json.load(v)
     with open(question_file) as q:
         questions = json.load(q)
     with open(answer_file) as a:
@@ -47,13 +51,19 @@ def readInput(vatt_file, question_file, answer_file):
     for i in range(n):
         img_id = questions['questions'][i]['image_id']
         qns = questions['questions'][i]['question']
+
         vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
         vatt += [0] * (20*6-len(vatt))
+        vcap = vcaps['COCO_train2014_{:012d}.jpg'.format(img_id)]
+        vcap += [0] * (20 * 6 - len(vcap))
+        vknow = vknows['COCO_train2014_{:012d}.jpg'.format(img_id)]
+        vknow += [0] * (20 * 6 - len(vknow))
+
         for j in range(10):
             ans = answers['annotations'][i]['answers'][j]['answer']
-            triples.append([vatt, qns, ans])
+            infosets.append([vatt, vcap, vknow, qns, ans])
 
-    return Lang('qns'), Lang('ans'), triples
+    return Lang('qns'), Lang('ans'), infosets
 
 
 def readCaptions(vatt_file, caption_file):

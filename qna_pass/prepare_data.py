@@ -43,8 +43,8 @@ def filterPairs_with_names(pairs, names):
 # -  Make word lists from sentences in pairs
 #
 
-def prepareData(vatt_file, qns_file, ans_file):
-    input_lang, output_lang, triples = readInput(vatt_file, qns_file, ans_file)
+def prepareData(vatt_file, vcap_file, vknow_file, qns_file, ans_file):
+    input_lang, output_lang, triples = readInput(vatt_file, vcap_file, vknow_file, qns_file, ans_file)
     print("Read %s sentence triples" % len(triples))
     triples = filterTriples(triples)
     print("Trimmed to %s sentence pairs" % len(triples))
@@ -144,3 +144,11 @@ def shuffle_batched_pairs(examples_batch):
         examples.extend(batch)
     return batch_examples(examples, True)
 
+def shuffle_batched_triples(examples_batch):
+    """
+    reshuffle and rebatch batched examples
+    """
+    examples = []
+    for batch in examples_batch:
+        examples.extend(batch)
+    return batch_examples(examples, True)

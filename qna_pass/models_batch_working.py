@@ -474,7 +474,6 @@ def indexesFromBatch(input_lang, output_lang, triple_batch):
     target_list = [padSentInds(output_lang, triple[2]) for triple in triple_batch]
     return vatt_list, input_list, target_list,
 
-
 def tensorFromBatch(input_lang, output_lang, triple_batch):
     vatt_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
     batch_size = len(vatt_list)

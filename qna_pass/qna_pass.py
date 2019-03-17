@@ -6,6 +6,8 @@ modified from Translation with a Sequence to Sequence Network and Attention
 **Author**: `Sean Robertson <https://github.com/spro/practical-pytorch>`_
 
 """
+import argparse
+
 from io import open
 import random
 import torch
@@ -15,14 +17,11 @@ import time
 
 from encoder_decoder import EncoderRNN, DecoderRNN
 from plot_results import showPlot
-from prepare_data import prepareData
+from prepare_data import prepareData, shuffle_batched_triples
 from timing import asMinutes, timeSince
+from lang import SOS_token, EOS_token, PAD_token, UNK_token
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-SOS_token = 0
-EOS_token = 1
-PAD_token = 2
 
 BATCH_SIZE = 100
 MAX_LENGTH = 20
@@ -47,19 +46,19 @@ def padSentInds(lang, sentence):
     return padded
 
 def indexesFromBatch(input_lang, output_lang, triple_batch):
-    vatt_list = [triple[0] for triple in triple_batch]
+    vinput_list = [triple[0] for triple in triple_batch]
     input_list = [padSentInds(input_lang, triple[1]) for triple in triple_batch]
     target_list = [padSentInds(output_lang, triple[2]) for triple in triple_batch]
-    return vatt_list, input_list, target_list,
+    return vinput_list, input_list, target_list,
 
 
 def tensorFromBatch(input_lang, output_lang, triple_batch):
-    vatt_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
-    batch_size = len(vatt_list)
-    vatt_tensor = torch.tensor(vatt_list, device=device, dtype=torch.float).view(1, batch_size, -1)
+    vinput_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
+    batch_size = len(vinput_list)
+    vinput_tensor = torch.tensor(vinput_list, device=device, dtype=torch.float).view(1, batch_size, -1)
     input_tensor = torch.tensor(input_list, dtype=torch.long, device=device).view(-1, batch_size)
     target_tensor = torch.tensor(target_list, dtype=torch.long, device=device).view(-1, batch_size)
-    return vatt_tensor, input_tensor, target_tensor
+    return vinput_tensor, input_tensor, target_tensor
 
 def tensorsFromTriples(triple_batch):
     return tensorFromBatch(input_lang, output_lang, triple_batch)
@@ -157,8 +156,7 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
 # Then we call ``train`` many times and occasionally print the progress (%
 # of examples, time so far, estimated time) and average loss.
 #
-
-def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, learning_rate=0.01, save_every=1000):
+def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_every=100, learning_rate=0.01, save_every=1000):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
@@ -177,14 +175,14 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
     n_iters = int(n_examples / BATCH_SIZE)
     for iter in range(1, n_iters + 1):
         training_triple = training_triples[iter - 1]
-        vatt_tensor = training_triple[0] # v_att * batchsz
+        vinput_tensor = training_triple[0] # v_att * batchsz
         input_tensor = training_triple[1]
         target_tensor = training_triple[2]
 
         print('iter {}:'.format(iter))
         print('vatt_shape: {}'.format(input_tensor.shape))
 
-        loss = train(vatt_tensor, input_tensor, target_tensor, encoder,
+        loss = train(vinput_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
         plot_loss_total += loss
@@ -206,7 +204,6 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
             torch.save(encoder1, 'encoder_iter_{:d}.pt'.format(iter%10000))
             torch.save(decoder1, 'decoder_iter_{:d}.pt'.format(iter%10000))
 
-
     showPlot(plot_losses)
 
 
@@ -226,9 +223,40 @@ def trainIters(encoder, decoder, n_examples, print_every=1000, plot_every=100, l
 #
 
 if __name__ == '__main__':
-    input_lang, output_lang, triples, nExamples = prepareData('../Vatt/Vatt20.json',
-            '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
-            '../qna_training_coco/v2_mscoco_train2014_annotations.json')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('vatt', help='vatt file')
+    parser.add_argument('vcap', help='vcap file')
+    parser.add_argument('vknow', help='vknow file')
+
+    args = parser.parse_args()
+
+    vatts = args.vatt
+    vcaps = args.cap
+    vknows = args.know
+
+
+    input_lang, output_lang, batch_triples, nExamples = prepareData(vatts, vcaps, vknows,
+                                                              '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
+                                                              '../qna_training_coco/v2_mscoco_train2014_annotations.json')
+
+    vatt_size = 1020
+    vknow_size = 300
+    hidden_size = 256
+    class_prob_boundingbx = 6
+    encoder1 = EncoderRNN(vatt_size, input_lang.n_words).to(device)
+    decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
+    epochs = 10
+
+    for epoch in range(epochs):
+        print('Epoch {:d}'.format(epoch))
+        trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
+        torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
+        torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
+        batch_triples = shuffle_batched_triples(batch_triples)
+
+        if (epoch % 10 == 0):
+            torch.save(encoder1, 'caption_encoder_epoch_{:d}.pt'.format(epoch))
+            torch.save(decoder1, 'caption_decoder_epoch_{:d}.pt'.format(epoch))
 
     num_Vatt = 20
     class_prob_boundingbx = 6

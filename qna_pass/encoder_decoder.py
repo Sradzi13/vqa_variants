@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-VATT_EMBED_SIZE = 256
+COMBO_EMBED_SIZE = 256
 WORD_EMBED_SIZE = 256
 HIDDEN_SIZE = 256
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -60,20 +60,18 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #
 
 class EncoderRNN(nn.Module):
-    def __init__(self, vatt_size, input_size):
+    def __init__(self, vcombo_size, input_size):
         super(EncoderRNN, self).__init__()
         self.hidden_size = HIDDEN_SIZE
-
-        self.vatt_embedding = nn.Linear(vatt_size, VATT_EMBED_SIZE, bias = False)
+        self.combined_embedding = nn.Linear(vcombo_size, COMBO_EMBED_SIZE, bias=False)
         self.word_embedding = nn.Embedding(input_size, WORD_EMBED_SIZE)
-        # self.vcap_embedding = nn.Embedding(input_size, VCAP_EMBED_SIZE)
-        # self.vknow_embedding = nn.Embedding(input_size, VKNOW_EMBED_SIZE)
-        # self.lstm = nn.LSTM(VATT_EMBED_SIZE + VCAP_EMBED_SIZE + VKNOW_EMBED_SIZE, hidden_size)
-        self.lstm = nn.LSTM(VATT_EMBED_SIZE, HIDDEN_SIZE)
+        self.lstm = nn.LSTM(COMBO_EMBED_SIZE, HIDDEN_SIZE)
 
-    def special_forward(self, vatt, hidden):
-        vatt_embedded = self.vatt_embedding(vatt)
-        output, hidden = self.lstm(vatt_embedded)
+    def special_forward(self, vatt_tensor, vcap_tensor, vknow_tensor, hidden):
+        print(vatt_tensor.size(), vcap_tensor.size(), vknow_tensor.size())
+        vcombo = torch.cat((vatt_tensor, vcap_tensor, vknow_tensor), 0) # NOTE TO JING, I"M NOT SURE THIS IS THE RIGHT AXIS
+        vcombo_embedded = self.combined_embedding(vcombo)
+        output, hidden = self.lstm(vcombo_embedded)
         return output, hidden
 
     def forward(self, input, hidden):

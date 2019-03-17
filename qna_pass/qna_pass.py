@@ -92,7 +92,7 @@ def tensorsFromTriples(triple_batch):
 #
 
 
-def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
+def train(vatt_tensor, vcap_tensor, vknow_tensor, input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
     batch_size = input_tensor.size()[1]
     encoder_hidden = encoder.initHidden(batch_size)
     encoder_optimizer.zero_grad()
@@ -106,7 +106,7 @@ def train(vatt_tensor, input_tensor, target_tensor, encoder, decoder, encoder_op
     loss = 0
 
     encoder_output, encoder_hidden = encoder.special_forward(
-            vatt_tensor, encoder_hidden) #vatt_size x batchsz input
+        vatt_tensor, vcap_tensor, vknow_tensor, encoder_hidden)
 
     encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden) # input_tensor now input len * batchsz
     decoder_input = torch.tensor([[SOS_token] * batch_size], device=device)
@@ -175,14 +175,17 @@ def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_eve
     n_iters = int(n_examples / BATCH_SIZE)
     for iter in range(1, n_iters + 1):
         training_triple = training_triples[iter - 1]
-        vinput_tensor = training_triple[0] # v_att * batchsz
-        input_tensor = training_triple[1]
-        target_tensor = training_triple[2]
+        vatt_tensor = training_triple[0] # v_att * batchsz
+        vcap_tensor = training_triple[1]
+        vknow_tensor = training_triple[2]
+
+        input_tensor = training_triple[3]
+        target_tensor = training_triple[4]
 
         print('iter {}:'.format(iter))
         print('vatt_shape: {}'.format(input_tensor.shape))
 
-        loss = train(vinput_tensor, input_tensor, target_tensor, encoder,
+        loss = train(vatt_tensor, vcap_tensor, vknow_tensor, input_tensor, target_tensor, encoder,
                      decoder, encoder_optimizer, decoder_optimizer, criterion)
         print_loss_total += loss
         plot_loss_total += loss
@@ -239,10 +242,11 @@ if __name__ == '__main__':
                                                               '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
                                                               '../qna_training_coco/v2_mscoco_train2014_annotations.json')
     vatt_size = 1020
+    vcap_size = 256
     vknow_size = 300
     hidden_size = 256
     class_prob_boundingbx = 6
-    encoder1 = EncoderRNN(vatt_size, input_lang.n_words).to(device)
+    encoder1 = EncoderRNN(vatt_size + vcap_size + vknow_size, input_lang.n_words).to(device)
     decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
     epochs = 10
 

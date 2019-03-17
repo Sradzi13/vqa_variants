@@ -204,8 +204,8 @@ def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_eve
         if iter % save_every == 0:
             with open('record.txt', 'w') as f:
                 f.write(str(iter)+'\n')
-            torch.save(encoder1, 'encoder_iter_{:d}.pt'.format(iter%10000))
-            torch.save(decoder1, 'decoder_iter_{:d}.pt'.format(iter%10000))
+            torch.save(encoder, 'encoder_iter_{:d}.pt'.format(iter%10000))
+            torch.save(decoder, 'decoder_iter_{:d}.pt'.format(iter%10000))
 
     showPlot(plot_losses)
 
@@ -245,31 +245,19 @@ if __name__ == '__main__':
     vcap_size = 256
     vknow_size = 300
     hidden_size = 256
-    class_prob_boundingbx = 6
-    encoder1 = EncoderRNN(vatt_size + vcap_size + vknow_size, input_lang.n_words).to(device)
+    encoder1 = EncoderRNN(vatt_size, vcap_size, vknow_size, input_lang.n_words).to(device)
     decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
     epochs = 10
 
     for epoch in range(epochs):
         print('Epoch {:d}'.format(epoch))
-        trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
+        trainIters(encoder1, decoder1, batch_triples, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
         torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
         torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
         batch_triples = shuffle_batched_triples(batch_triples)
 
         if (epoch % 10 == 0):
-            torch.save(encoder1, 'caption_encoder_epoch_{:d}.pt'.format(epoch))
-            torch.save(decoder1, 'caption_decoder_epoch_{:d}.pt'.format(epoch))
-
-    num_Vatt = 20
-    class_prob_boundingbx = 6
-    hidden_size = 256
-    encoder1 = EncoderRNN(num_Vatt*class_prob_boundingbx, input_lang.n_words).to(device)
-    decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
-    epochs = 10
-
-    for epoch in range(epochs):
-        print('Epoch {:d}'.format(epoch))
-        trainIters(encoder1, decoder1, nExamples, print_every=5000, learning_rate=0.001, save_every=1000)
-        torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
-        torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
+            torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
+            torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))
+    torch.save(encoder1, 'encoder_epoch_{:d}.pt'.format(epoch))
+    torch.save(decoder1, 'decoder_epoch_{:d}.pt'.format(epoch))

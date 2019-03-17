@@ -53,11 +53,8 @@ def readInput(vatt_file, vcap_file, vknow_file, question_file, answer_file):
         qns = questions['questions'][i]['question']
 
         vatt = vatts['COCO_train2014_{:012d}.jpg'.format(img_id)]
-        vatt += [0] * (20*6-len(vatt))
         vcap = vcaps['COCO_train2014_{:012d}.jpg'.format(img_id)]
-        vcap += [0] * (20 * 6 - len(vcap))
         vknow = vknows['COCO_train2014_{:012d}.jpg'.format(img_id)]
-        vknow += [0] * (20 * 6 - len(vknow))
 
         for j in range(10):
             ans = answers['annotations'][i]['answers'][j]['answer']

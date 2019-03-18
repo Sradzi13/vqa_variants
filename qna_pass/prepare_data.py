@@ -1,6 +1,6 @@
 import math
 import numpy as np
-from read_input import readInput, readCaptions, readCaptions_with_name
+from read_input import readInput, readInput_noVcap, readCaptions, readCaptions_with_name
 
 BATCH_SIZE = 100
 MAX_QA_LENGTH = 20
@@ -43,8 +43,8 @@ def filterPairs_with_names(pairs, names):
 # -  Make word lists from sentences in pairs
 #
 
-def prepareData(vatt_file, vatt20_file, vknow_file, qns_file, ans_file):
-    input_lang, output_lang, triples = readInput(vatt_file, vatt20_file, vknow_file, qns_file, ans_file)
+def prepareData(vatt_file, vcap_file, vknow_file, qns_file, ans_file):
+    input_lang, output_lang, triples = readInput(vatt_file, vcap_file, vknow_file, qns_file, ans_file)
     print("Read %s sentence triples" % len(triples))
     triples = filterTriples(triples)
     print("Trimmed to %s sentence pairs" % len(triples))
@@ -134,6 +134,25 @@ def prepareCaptions_with_names(vatt_file, caption_file, cap_lang=None):
     print('length', length)
     pairs_batch = batch_examples((pairs, names), True)
     return cap_lang, pairs_batch, length
+
+
+def prepareData_noVcap(vatt_file, vatt20_file, vknow_file, qns_file, ans_file):
+        input_lang, output_lang, triples = readInput_noVcap(vatt_file, vatt20_file, vknow_file, qns_file, ans_file)
+        print("Read %s sentence triples" % len(triples))
+        triples = filterTriples(triples)
+        print("Trimmed to %s sentence pairs" % len(triples))
+        print("Counting words...")
+        for triple in triples:
+            input_lang.addSentence(triple[3])
+            output_lang.addSentence(triple[4])
+        print("Counted words:")
+        print(input_lang.name, input_lang.n_words)
+        print(output_lang.name, output_lang.n_words)
+        length = len(triples)
+        print('length', length)
+        triples_batch = batch_examples(triples, False)
+        return input_lang, output_lang, triples_batch, length
+
 
 def shuffle_batched_pairs(examples_batch):
     """

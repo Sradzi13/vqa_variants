@@ -15,9 +15,9 @@ import torch.nn as nn
 from torch import optim
 import time
 
-from encoder_decoder import EncoderRNN, DecoderRNN
+from encoder_decoder import EncoderNoVCapRNN, DecoderRNN
 from plot_results import showPlot
-from prepare_data import prepareData, shuffle_batched_triples
+from prepare_data import prepareData_noVcap, shuffle_batched_triples
 from timing import asMinutes, timeSince
 from lang import SOS_token, EOS_token, PAD_token, UNK_token
 
@@ -51,8 +51,7 @@ def indexesFromBatch(input_lang, output_lang, triple_batch):
     vknow_list = [triple[2] for triple in triple_batch]
     input_list = [padSentInds(input_lang, triple[3]) for triple in triple_batch]
     target_list = [padSentInds(output_lang, triple[4]) for triple in triple_batch]
-    return vatt_list, vatt20_list, vknow_list, input_list, target_list,
-
+    return vatt_list, vatt20_list, vknow_list, input_list, target_list
 
 def tensorFromBatch(input_lang, output_lang, triple_batch):
     vatt_list, vatt20_list, vknow_list, input_list, target_list = indexesFromBatch(input_lang, output_lang, triple_batch)
@@ -186,7 +185,7 @@ def trainIters(encoder, decoder, triples, n_examples, print_every=1000, plot_eve
         input_tensor = training_triple[3]
         target_tensor = training_triple[4]
 
-        #print('iter {}:'.format(iter))
+        print('iter {}:'.format(iter))
         #print('vatt_shape: {}'.format(input_tensor.shape))
 
         loss = train(vatt_tensor, vatt20_tensor, vknow_tensor, input_tensor, target_tensor, encoder,
@@ -243,14 +242,14 @@ if __name__ == '__main__':
     vknows = args.vknow
 
 
-    input_lang, output_lang, batch_triples, nExamples = prepareData(vatts, vatts20, vknows,
+    input_lang, output_lang, batch_triples, nExamples = prepareData_noVcap(vatts, vatts20, vknows,
                                                               '../qna_training_coco/v2_OpenEnded_mscoco_train2014_questions.json',
                                                               '../qna_training_coco/v2_mscoco_train2014_annotations.json')
     vatt_size = 1020
     vatt20_size = 120
     vknow_size = 300
     hidden_size = 256
-    encoder1 = EncoderRNN(vatt_size, vatt20_size, vknow_size, input_lang.n_words).to(device)
+    encoder1 = EncoderNoVCapRNN(vatt_size, vatt20_size, vknow_size, input_lang.n_words).to(device)
     decoder1 = DecoderRNN(hidden_size, output_lang.n_words).to(device)
     epochs = 10
 

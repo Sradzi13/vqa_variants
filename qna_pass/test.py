@@ -3,8 +3,7 @@ import argparse
 import torch
 import json
 import random
-from prepare_data import prepareData_noVcap
-#from models import tensorFromSentence, prepareData2
+from prepare_data import prepareData_noVcap, tensorFromSentence
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
